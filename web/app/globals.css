@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark-first token surface. Light overrides live under :root; .dark wins by default. */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 20% 12%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 40%;
+  --card: 0 0% 100%;
+  --border: 220 13% 88%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+  --success: 142 71% 45%;
+  --warning: 38 92% 50%;
+  --danger: 0 72% 51%;
+}
+
+.dark {
+  --background: 224 24% 6%;
+  --foreground: 210 20% 92%;
+  --muted: 223 20% 12%;
+  --muted-foreground: 220 12% 60%;
+  --card: 224 22% 9%;
+  --border: 223 18% 18%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+  --success: 142 66% 48%;
+  --warning: 38 92% 55%;
+  --danger: 0 72% 58%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+}

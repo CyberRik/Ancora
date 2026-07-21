@@ -1,0 +1,78 @@
+# Ancora — uv workspace root.
+# This root is NOT an installable package (package = false); it only ties the
+# member packages/services together and holds shared tooling config.
+[project]
+name = "ancora-monorepo"
+version = "0.1.0"
+description = "Ancora — a fault-tolerant runtime for durable AI workflows (workspace root)."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+
+# Intra-workspace packages resolve to local source, not PyPI.
+[tool.uv.sources]
+ancora = { workspace = true }
+ancora-cli = { workspace = true }
+ancora-api = { workspace = true }
+
+[dependency-groups]
+# Shared dev toolchain, installed into the workspace virtualenv via `uv sync`.
+dev = [
+    "ruff==0.9.6",
+    "mypy==1.15.0",
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.3",
+    "httpx==0.28.1",
+    "pre-commit==4.1.0",
+]
+
+# ---------------------------------------------------------------------------
+# Shared tool configuration (applies repo-wide).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, isort, pyupgrade, bugbear, comprehensions, simplify.
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.lint.isort]
+known-first-party = ["ancora", "ancora_api", "ancora_cli"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+namespace_packages = true
+explicit_package_bases = true
+exclude = ["migrations/versions", "build/"]
+# Each workspace package has its own source root; listing them as bases (and
+# checking library source explicitly, not the whole tree) avoids the editable-install
+# "source file found twice under different module names" collision.
+mypy_path = ["packages/sdk-python", "packages/cli", "services/api-gateway"]
+files = [
+    "packages/sdk-python/ancora",
+    "packages/cli/ancora_cli",
+    "services/api-gateway/ancora_api",
+]
+
+[[tool.mypy.overrides]]
+# Third-party libs without stubs — don't fail the strict gate on them.
+module = ["ray.*", "temporalio.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-ra -q"
+testpaths = ["packages", "services"]

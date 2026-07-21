@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (lint · type · test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.7"
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Sync workspace
+        run: uv sync --all-packages
+      - name: Ruff (lint + format check)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Mypy (strict)
+        run: uv run mypy
+      - name: Pytest
+        run: uv run pytest
+
+  migrations:
+    name: Alembic migrations (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: ancora
+          POSTGRES_PASSWORD: ancora
+          POSTGRES_DB: ancora
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ancora"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.7"
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --package ancora-api
+      - name: Apply migrations, then verify idempotent downgrade/upgrade
+        working-directory: services/api-gateway
+        env:
+          ANCORA_DATABASE_URL: postgresql+asyncpg://ancora:ancora@localhost:5432/ancora
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+  web:
+    name: Web (lint · type · build · smoke)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.29.3"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Smoke test
+        run: pnpm run test
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/api-gateway/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

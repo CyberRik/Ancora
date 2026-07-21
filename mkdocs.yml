@@ -1,0 +1,50 @@
+site_name: Ancora
+site_description: A fault-tolerant runtime for durable AI workflows.
+repo_url: https://github.com/ancora/ancora
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Light mode
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - RFC-0001 · Vision & Architecture: RFC-0001-durable-ai-runtime.md
+      - RFC-0001a · Architecture Review: RFC-0001a-architecture-review.md
+  - Delivery:
+      - Implementation Plan: IMPLEMENTATION-PLAN.md
+      - GitHub Project Plan: PROJECT-PLAN-github-issues.md
+  - Decisions:
+      - ADRs: adr/README.md

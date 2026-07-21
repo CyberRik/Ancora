@@ -1,0 +1,108 @@
+# Ancora local stack (Phase 0).
+# Brings up Temporal + Postgres + Redis + API Gateway + dashboard.
+#   docker compose -f deploy/docker/docker-compose.yml up --build
+#
+# Build context is the repo root (../..) so the API image can see the uv workspace.
+name: ancora
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ancora
+      POSTGRES_PASSWORD: ancora
+      POSTGRES_DB: ancora
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ancora"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=ancora
+      - POSTGRES_PWD=ancora
+      - POSTGRES_SEEDS=postgres
+    ports:
+      - "7233:7233"
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  temporal-ui:
+    image: temporalio/ui:2.31.2
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8233:8080"
+
+  # One-shot: apply Alembic migrations before the API starts serving.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: services/api-gateway/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
+    working_dir: /app/services/api-gateway
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: services/api-gateway/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      - ANCORA_ENVIRONMENT=development
+      - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
+      - ANCORA_CORS_ORIGINS=["http://localhost:3000"]
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: web/Dockerfile
+    depends_on:
+      - api
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

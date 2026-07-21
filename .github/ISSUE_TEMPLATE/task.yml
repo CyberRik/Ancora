@@ -1,0 +1,40 @@
+name: Implementation task
+description: A concrete engineering task from the project plan (AN-###).
+title: "AN-XXX · <short imperative title>"
+labels: []
+body:
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      description: Which epic from docs/PROJECT-PLAN-github-issues.md?
+      placeholder: "E2 — Execution Runtime & Ray Bridge"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be built and why.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Blocking issues (AN-### references).
+      placeholder: "Depends on AN-028, AN-030"
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Difficulty
+      options: ["S (≤1d)", "M (2–4d)", "L (1–2w)", "XL (multi-issue)"]
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Definition of done — how we verify this is complete.
+    validations:
+      required: true

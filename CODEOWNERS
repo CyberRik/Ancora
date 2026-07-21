@@ -1,0 +1,13 @@
+# Default owners for everything in the repo.
+* @ancora/maintainers
+
+# Area owners (align with the label taxonomy in docs/PROJECT-PLAN-github-issues.md).
+/services/api-gateway/     @ancora/backend
+/services/workflow-workers/ @ancora/runtime
+/services/activity-workers/ @ancora/runtime
+/services/scheduler/       @ancora/runtime
+/packages/sdk-python/      @ancora/sdk
+/packages/cli/             @ancora/sdk
+/web/                      @ancora/frontend
+/deploy/                   @ancora/infra
+/docs/                     @ancora/maintainers
