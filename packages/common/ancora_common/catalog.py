@@ -14,6 +14,7 @@ from typing import Any, Final
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ancora_common.models import WorkflowDef, WorkflowRun, WorkflowVersion
 
@@ -63,8 +64,12 @@ async def get_workflow_def(
 
 
 async def list_workflow_defs(session: AsyncSession, *, project_id: uuid.UUID) -> list[WorkflowDef]:
+    # Eager-load versions: async sessions cannot lazy-load relationships on access.
     result = await session.execute(
-        select(WorkflowDef).where(WorkflowDef.project_id == project_id).order_by(WorkflowDef.name)
+        select(WorkflowDef)
+        .options(selectinload(WorkflowDef.versions))
+        .where(WorkflowDef.project_id == project_id)
+        .order_by(WorkflowDef.name)
     )
     return list(result.scalars().all())
 

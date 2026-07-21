@@ -36,9 +36,7 @@ def main() -> int:
         assert "hello" in names, "worker did not register the 'hello' workflow"
 
         # 2. start a run and wait for completion
-        resp = client.post(
-            "/v1/workflows/hello/runs", json={"input": {"name": "Ada"}}
-        )
+        resp = client.post("/v1/workflows/hello/runs", json={"input": {"name": "Ada"}})
         resp.raise_for_status()
         run_id = resp.json()["run_id"]
         print(f"[2] started run {run_id}; polling…")
@@ -60,20 +58,28 @@ def main() -> int:
 
         # 3. idempotency
         key = "e2e-idem-key-123"
-        r1 = client.post(
-            "/v1/workflows/hello/runs",
-            json={"input": {"name": "Bob"}},
-            headers={"Idempotency-Key": key},
-        ).raise_for_status().json()
-        r2 = client.post(
-            "/v1/workflows/hello/runs",
-            json={"input": {"name": "Bob"}},
-            headers={"Idempotency-Key": key},
-        ).raise_for_status().json()
+        r1 = (
+            client.post(
+                "/v1/workflows/hello/runs",
+                json={"input": {"name": "Bob"}},
+                headers={"Idempotency-Key": key},
+            )
+            .raise_for_status()
+            .json()
+        )
+        r2 = (
+            client.post(
+                "/v1/workflows/hello/runs",
+                json={"input": {"name": "Bob"}},
+                headers={"Idempotency-Key": key},
+            )
+            .raise_for_status()
+            .json()
+        )
         print(f"[3] idempotency: {r1['run_id']} == {r2['run_id']}")
         assert r1["run_id"] == r2["run_id"], "idempotency key did not dedupe"
 
-    print("\n✅ Phase 1 end-to-end smoke passed.")
+    print("\n[PASS] Phase 1 end-to-end smoke passed.")
     return 0
 
 

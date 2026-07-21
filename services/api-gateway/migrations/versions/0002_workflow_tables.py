@@ -102,14 +102,17 @@ def upgrade() -> None:
     op.create_index("ix_workflow_run_version_id", "workflow_run", ["workflow_version_id"])
 
     # Seed the single-tenant defaults (idempotent via fixed UUIDs).
+    # Cast the string-bound params explicitly — Postgres won't coerce varchar→uuid.
     op.execute(
         sa.text(
-            "INSERT INTO org (id, name) VALUES (:id, 'default') ON CONFLICT (id) DO NOTHING"
+            "INSERT INTO org (id, name) VALUES (CAST(:id AS uuid), 'default') "
+            "ON CONFLICT (id) DO NOTHING"
         ).bindparams(id=DEFAULT_ORG_ID)
     )
     op.execute(
         sa.text(
-            "INSERT INTO project (id, org_id, name) VALUES (:id, :org, 'default') "
+            "INSERT INTO project (id, org_id, name) "
+            "VALUES (CAST(:id AS uuid), CAST(:org AS uuid), 'default') "
             "ON CONFLICT (id) DO NOTHING"
         ).bindparams(id=DEFAULT_PROJECT_ID, org=DEFAULT_ORG_ID)
     )
@@ -123,5 +126,11 @@ def downgrade() -> None:
     op.drop_table("workflow_version")
     op.drop_index("ix_workflow_def_project_id", table_name="workflow_def")
     op.drop_table("workflow_def")
-    op.execute(sa.text("DELETE FROM project WHERE id = :id").bindparams(id=DEFAULT_PROJECT_ID))
-    op.execute(sa.text("DELETE FROM org WHERE id = :id").bindparams(id=DEFAULT_ORG_ID))
+    op.execute(
+        sa.text("DELETE FROM project WHERE id = CAST(:id AS uuid)").bindparams(
+            id=DEFAULT_PROJECT_ID
+        )
+    )
+    op.execute(
+        sa.text("DELETE FROM org WHERE id = CAST(:id AS uuid)").bindparams(id=DEFAULT_ORG_ID)
+    )
