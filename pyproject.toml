@@ -18,8 +18,10 @@ members = ["packages/*", "services/*"]
 # Intra-workspace packages resolve to local source, not PyPI.
 [tool.uv.sources]
 ancora = { workspace = true }
+ancora-common = { workspace = true }
 ancora-cli = { workspace = true }
 ancora-api = { workspace = true }
+ancora-worker = { workspace = true }
 
 [dependency-groups]
 # Shared dev toolchain, installed into the workspace virtualenv via `uv sync`.
@@ -43,7 +45,10 @@ extend-exclude = ["migrations/versions"]
 [tool.ruff.lint]
 # pyflakes, pycodestyle, isort, pyupgrade, bugbear, comprehensions, simplify.
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]  # line length handled by formatter
+# E501: line length handled by formatter.
+# B008: function calls in argument defaults are the intended FastAPI/Typer
+#       dependency-injection idiom (Depends/Header/Query/Argument).
+ignore = ["E501", "B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ancora", "ancora_api", "ancora_cli"]
@@ -60,11 +65,19 @@ exclude = ["migrations/versions", "build/"]
 # Each workspace package has its own source root; listing them as bases (and
 # checking library source explicitly, not the whole tree) avoids the editable-install
 # "source file found twice under different module names" collision.
-mypy_path = ["packages/sdk-python", "packages/cli", "services/api-gateway"]
+mypy_path = [
+    "packages/sdk-python",
+    "packages/common",
+    "packages/cli",
+    "services/api-gateway",
+    "services/workflow-workers",
+]
 files = [
     "packages/sdk-python/ancora",
+    "packages/common/ancora_common",
     "packages/cli/ancora_cli",
     "services/api-gateway/ancora_api",
+    "services/workflow-workers/ancora_worker",
 ]
 
 [[tool.mypy.overrides]]
@@ -74,5 +87,9 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra -q"
 testpaths = ["packages", "services"]
+markers = [
+    "temporal: tests that need a Temporal test server (downloaded on first run)",
+]

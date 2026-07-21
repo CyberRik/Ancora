@@ -10,17 +10,16 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from ancora_common.models import Base
+from ancora_common.settings import CommonSettings
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from ancora_api.models import Base
-from ancora_api.settings import get_settings
-
 config = context.config
 
 # Inject the runtime DB URL.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+config.set_main_option("sqlalchemy.url", CommonSettings().database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

@@ -42,6 +42,9 @@ down: ## Stop the local stack
 logs: ## Tail stack logs
 	docker compose -f deploy/docker/docker-compose.yml logs -f
 
+e2e: ## Run the Phase 1 end-to-end smoke check against a running stack
+	uv run python scripts/e2e_phase1.py
+
 docs: ## Serve the docs site locally
 	uv run --with mkdocs-material mkdocs serve
 

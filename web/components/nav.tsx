@@ -7,6 +7,7 @@ import {
   GitBranch,
   HeartPulse,
   LayoutDashboard,
+  Play,
   ServerCog,
   Zap,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/workflows", label: "Workflows", icon: GitBranch },
+  { href: "/runs", label: "Runs", icon: Play },
   { href: "/workers", label: "Workers", icon: ServerCog },
   { href: "/history", label: "History", icon: Activity },
   { href: "/chaos", label: "Chaos", icon: Zap },

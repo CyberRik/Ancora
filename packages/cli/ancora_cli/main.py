@@ -38,6 +38,25 @@ def info() -> None:
 
 
 @app.command()
+def lint(
+    paths: list[str] = typer.Argument(None, help="Files or directories to check."),
+    strict: bool = typer.Option(False, "--strict", help="Exit non-zero if any issue is found."),
+) -> None:
+    """Warn on non-deterministic patterns in workflow code (best-effort)."""
+    from ancora.lint import check_paths
+
+    targets = paths or ["."]
+    issues = check_paths(targets)
+    if not issues:
+        console.print("[green]No determinism issues found.[/green]")
+        raise typer.Exit(code=0)
+    for issue in issues:
+        console.print(f"[yellow]{issue}[/yellow]")
+    console.print(f"\n{len(issues)} issue(s).")
+    raise typer.Exit(code=1 if strict else 0)
+
+
+@app.command()
 def dev() -> None:
     """Run the local dev runtime (placeholder until Phase 1)."""
     console.print(

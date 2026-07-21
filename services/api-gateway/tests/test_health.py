@@ -32,3 +32,13 @@ async def test_version_endpoint(client: httpx.AsyncClient) -> None:
     body = resp.json()
     assert body["service"] == "ancora-api"
     assert body["version"].count(".") >= 2
+
+
+async def test_workflow_endpoints_degrade_without_temporal(
+    client: httpx.AsyncClient,
+) -> None:
+    # The ASGI transport doesn't run the lifespan, so no Temporal client is set:
+    # workflow endpoints must degrade to 503, not crash.
+    async with client:
+        resp = await client.get("/v1/workflows")
+    assert resp.status_code == 503

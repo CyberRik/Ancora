@@ -1,13 +1,17 @@
 [project]
-name = "ancora"
+name = "ancora-common"
 version = "0.1.0"
-description = "Ancora SDK — author durable AI workflows."
+description = "Ancora shared server-side library — DB models, sessions, Temporal client, catalog."
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 dependencies = [
     "pydantic>=2.6",
+    "pydantic-settings>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
     "temporalio>=1.9,<2",
+    "python-json-logger>=3.2",
 ]
 
 [build-system]
@@ -15,4 +19,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["ancora"]
+packages = ["ancora_common"]

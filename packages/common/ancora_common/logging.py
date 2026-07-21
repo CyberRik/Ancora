@@ -1,7 +1,7 @@
-"""Structured JSON logging.
+"""Structured JSON logging shared across services.
 
-Every log line carries a stable shape so downstream (Phase 4) can correlate by
-``run_id``/``trace_id``. In dev you can flip ``ANCORA_LOG_JSON=false`` for plain text.
+Every service configures this at startup so log lines share one shape and can be
+correlated by ``run_id``/``trace_id`` once those land (Phase 4).
 """
 
 from __future__ import annotations
@@ -13,11 +13,10 @@ from pythonjsonlogger import json as jsonlogger
 
 
 def configure_logging(*, level: str = "INFO", json_output: bool = True) -> None:
-    """Configure root logging once at process start."""
+    """Configure root logging once at process start (idempotent)."""
     root = logging.getLogger()
     root.setLevel(level.upper())
 
-    # Reset handlers so re-invocation (tests, reload) doesn't duplicate output.
     for existing in list(root.handlers):
         root.removeHandler(existing)
 

@@ -11,10 +11,12 @@ WORKDIR /app
 # Copy the workspace manifests needed to resolve the api-gateway + its local deps.
 COPY pyproject.toml uv.lock* ./
 COPY packages/sdk-python/pyproject.toml packages/sdk-python/
+COPY packages/common/pyproject.toml packages/common/
 COPY services/api-gateway/pyproject.toml services/api-gateway/
 
 # Copy sources for the local workspace members.
 COPY packages/sdk-python/ packages/sdk-python/
+COPY packages/common/ packages/common/
 COPY services/api-gateway/ services/api-gateway/
 
 # Install only the api-gateway package (and its workspace deps) into a venv.

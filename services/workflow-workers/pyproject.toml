@@ -1,0 +1,23 @@
+[project]
+name = "ancora-worker"
+version = "0.1.0"
+description = "Ancora workflow worker — executes deterministic workflows (Phase 1: activities inline)."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "temporalio>=1.9,<2",
+    "pydantic>=2.6",
+    "ancora",
+    "ancora-common",
+]
+
+[project.scripts]
+ancora-worker = "ancora_worker.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ancora_worker"]

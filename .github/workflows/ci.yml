@@ -31,8 +31,23 @@ jobs:
           uv run ruff format --check .
       - name: Mypy (strict)
         run: uv run mypy
-      - name: Pytest
-        run: uv run pytest
+      - name: Pytest (unit — no external services)
+        run: uv run pytest -m "not temporal"
+
+  temporal:
+    name: Temporal integration (replay + durability)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.7"
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --all-packages
+      - name: Pytest (Temporal test server — replay + worker-kill durability)
+        run: uv run pytest -m temporal
 
   migrations:
     name: Alembic migrations (Postgres)
@@ -103,5 +118,13 @@ jobs:
           context: .
           file: services/api-gateway/Dockerfile
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/workflow-workers/Dockerfile
+          push: false
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker

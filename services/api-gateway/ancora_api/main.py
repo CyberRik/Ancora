@@ -1,9 +1,15 @@
-"""FastAPI application factory and Phase 0 endpoints.
+"""FastAPI application factory.
 
 Endpoints:
-  GET /healthz      liveness (200 while the process is up; reports DB check)
-  GET /readyz       readiness (503 unless the database is reachable)
-  GET /v1/version   build/version metadata
+  GET  /healthz                        liveness (+ DB check)
+  GET  /readyz                         readiness (503 unless DB reachable)
+  GET  /v1/version                     build/version metadata
+  GET  /v1/workflows                   list registered workflow definitions
+  GET  /v1/workflows/{name}            get one definition
+  POST /v1/workflows/{name}/runs       start a run
+  GET  /v1/runs                        list runs
+  GET  /v1/runs/{run_id}               get a run (refreshed from Temporal)
+  POST /v1/runs/{run_id}/cancel        cancel a run
 """
 
 from __future__ import annotations
@@ -12,12 +18,17 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Response, status
+from ancora_common import db
+from ancora_common.logging import configure_logging
+from ancora_common.temporal import connect
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ancora_api import __version__, db
-from ancora_api.logging import configure_logging
+from ancora_api import __version__
+from ancora_api.routers import runs, workflows
+from ancora_api.service import NotFoundError
 from ancora_api.settings import get_settings
 
 logger = logging.getLogger("ancora.api")
@@ -39,6 +50,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(level=settings.log_level, json_output=settings.log_json)
     logger.info("api-gateway starting", extra={"environment": settings.environment})
+
+    # Connect to Temporal in the background-friendly way: failure here degrades
+    # the API to 503 on workflow endpoints rather than crashing the process.
+    try:
+        app.state.temporal_client = await connect(
+            settings.temporal_address,
+            settings.temporal_namespace,
+            retries=5,
+            backoff_seconds=1.0,
+        )
+        logger.info("connected to Temporal", extra={"address": settings.temporal_address})
+    except Exception as exc:  # noqa: BLE001
+        app.state.temporal_client = None
+        logger.warning("Temporal not connected at startup: %s", exc)
+
     yield
     await db.dispose_engine()
     logger.info("api-gateway stopped")
@@ -60,18 +86,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.exception_handler(NotFoundError)
+    async def _not_found(request: Request, exc: NotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
     @app.get("/healthz", response_model=HealthStatus, tags=["health"])
     async def healthz() -> HealthStatus:
-        """Liveness: 200 while the app is up. Includes a best-effort DB check."""
         db_ok = await db.ping()
-        return HealthStatus(
-            status="ok",
-            checks={"database": "ok" if db_ok else "unavailable"},
-        )
+        return HealthStatus(status="ok", checks={"database": "ok" if db_ok else "unavailable"})
 
     @app.get("/readyz", response_model=HealthStatus, tags=["health"])
     async def readyz(response: Response) -> HealthStatus:
-        """Readiness: 503 unless the database is reachable."""
         db_ok = await db.ping()
         if not db_ok:
             response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -88,6 +113,8 @@ def create_app() -> FastAPI:
             environment=settings.environment,
         )
 
+    app.include_router(workflows.router)
+    app.include_router(runs.router)
     return app
 
 

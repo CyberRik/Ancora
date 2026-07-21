@@ -1,4 +1,8 @@
-"""Async database engine, session factory, and a lightweight ping helper."""
+"""Async database engine, session factory, and a lightweight ping helper.
+
+The engine is lazily created from ``CommonSettings.database_url`` and shared
+process-wide. Services call :func:`session_scope` for transactional work.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from ancora_api.settings import get_settings
+from ancora_common.settings import CommonSettings
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -23,7 +27,7 @@ def get_engine() -> AsyncEngine:
     """Return the process-wide async engine, creating it on first use."""
     global _engine, _session_factory
     if _engine is None:
-        settings = get_settings()
+        settings = CommonSettings()
         _engine = create_async_engine(
             settings.database_url,
             pool_pre_ping=True,
@@ -42,7 +46,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 @asynccontextmanager
 async def session_scope() -> AsyncIterator[AsyncSession]:
-    """Transactional session context manager."""
+    """Transactional session context manager (commit on success, rollback on error)."""
     factory = get_session_factory()
     async with factory() as session:
         try:

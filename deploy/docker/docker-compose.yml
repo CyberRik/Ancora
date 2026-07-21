@@ -84,14 +84,35 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      temporal:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     environment:
       - ANCORA_ENVIRONMENT=development
       - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
+      - ANCORA_TEMPORAL_ADDRESS=temporal:7233
+      - ANCORA_TEMPORAL_NAMESPACE=default
+      - ANCORA_TASK_QUEUE=ancora-default
       - ANCORA_CORS_ORIGINS=["http://localhost:3000"]
     ports:
       - "8080:8080"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: services/workflow-workers/Dockerfile
+    depends_on:
+      temporal:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
+      - ANCORA_TEMPORAL_ADDRESS=temporal:7233
+      - ANCORA_TEMPORAL_NAMESPACE=default
+      - ANCORA_TASK_QUEUE=ancora-default
+    restart: on-failure
 
   web:
     build:
