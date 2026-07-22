@@ -8,13 +8,21 @@ The gated workflow runs one activity, then waits durably for a signal. We:
 
 Because the first activity's result lives in Temporal history, worker B replays
 it without re-executing — no lost state, no duplicated work.
+
+Uses a *real* dev server (``start_local``), not the time-skipping test server:
+this scenario kills the worker and then makes progress via an external signal,
+and time-skipping has no worker to anchor the clock during the hand-off, so it
+stalls. (Same reason the activity-worker kill scenarios use ``start_local``.)
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 
 import pytest
+import pytest_asyncio
+from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
@@ -23,6 +31,16 @@ from ancora_worker.examples import GatedWorkflow, greet
 pytestmark = pytest.mark.temporal
 
 _TASK_QUEUE = "tq-durable"
+
+
+@pytest_asyncio.fixture
+async def env() -> AsyncIterator[WorkflowEnvironment]:
+    """Real dev server (overrides the conftest time-skipping ``env``)."""
+    environment = await WorkflowEnvironment.start_local(data_converter=pydantic_data_converter)
+    try:
+        yield environment
+    finally:
+        await environment.shutdown()
 
 
 async def _wait_for_gate(handle: object, tries: int = 200) -> None:
@@ -66,5 +84,6 @@ async def test_worker_restart_resumes(env: WorkflowEnvironment) -> None:
         await handle.signal(GatedWorkflow.approve)
         result = await handle.result()
 
-    # Ada → "Hello, Ada!" → "Hello, Hello, Ada!"
-    assert result["message"] == "Hello, Hello, Ada!"
+    # greet wraps "Hello, {name}!" each hop:
+    #   "Ada" → "Hello, Ada!" → "Hello, Hello, Ada!!"
+    assert result["message"] == "Hello, Hello, Ada!!"
