@@ -50,6 +50,34 @@ export interface StartRunResponse {
   links: { self: string; stream: string };
 }
 
+export type WorkerStatus = "live" | "stale" | "unknown";
+
+export interface WorkerResources {
+  total_cpus?: number;
+  total_gpus?: number;
+  accelerator_type?: string | null;
+}
+
+export interface Worker {
+  worker_id: string;
+  host: string | null;
+  pid: number | null;
+  pools: string[];
+  task_queues: string[];
+  resources: WorkerResources;
+  status: WorkerStatus;
+  registered_at: string;
+  last_heartbeat_at: string | null;
+}
+
+export interface Queue {
+  queue: string;
+  capability: string | null;
+  worker_count: number;
+  live_worker_count: number;
+  backlog: number;
+}
+
 async function req<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
@@ -94,4 +122,8 @@ export const api = {
     }),
   cancelRun: (id: string) =>
     req<Run>(`/v1/runs/${id}/cancel`, { method: "POST" }),
+  listWorkers: (signal?: AbortSignal) =>
+    req<Worker[]>("/v1/workers", { signal }),
+  listQueues: (signal?: AbortSignal) =>
+    req<Queue[]>("/v1/queues", { signal }),
 };

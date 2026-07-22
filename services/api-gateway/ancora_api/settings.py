@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from ancora_common.settings import CommonSettings
 from pydantic import Field
+
+from ancora_common.settings import CommonSettings
 
 
 class Settings(CommonSettings):

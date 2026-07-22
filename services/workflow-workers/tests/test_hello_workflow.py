@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from ancora_worker.examples import HelloWorkflow, greet
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
+
+from ancora_worker.examples import HelloWorkflow, greet
 
 pytestmark = pytest.mark.temporal
 

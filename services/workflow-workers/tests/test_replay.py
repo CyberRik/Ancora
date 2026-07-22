@@ -8,10 +8,11 @@ this is the real determinism guarantee (RFC-0001a §1.5).
 from __future__ import annotations
 
 import pytest
-from ancora_worker.examples import HelloWorkflow, greet
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
+
+from ancora_worker.examples import HelloWorkflow, greet
 
 pytestmark = pytest.mark.temporal
 

@@ -76,8 +76,9 @@ class TaskHandle(Protocol):
 class Backend(Protocol):
     name: str
 
-    def submit(self, fn: ComputeFn, *, resources: ResourceSpec, progress: LiveProgress) -> TaskHandle:
-        ...
+    def submit(
+        self, fn: ComputeFn, *, resources: ResourceSpec, progress: LiveProgress
+    ) -> TaskHandle: ...
 
     def shutdown(self) -> None: ...
 
@@ -86,7 +87,7 @@ class Backend(Protocol):
 # Local (thread-pool) backend
 # --------------------------------------------------------------------------- #
 class _LocalTaskHandle:
-    task_id = None
+    task_id: str | None = None
 
     def __init__(self, future: Future[Any], progress: LiveProgress) -> None:
         self._future = future
@@ -109,7 +110,9 @@ class LocalBackend:
     name = "local"
 
     def __init__(self, max_workers: int = 8) -> None:
-        self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ancora-compute")
+        self._pool = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="ancora-compute"
+        )
 
     def submit(
         self, fn: ComputeFn, *, resources: ResourceSpec, progress: LiveProgress
@@ -187,7 +190,7 @@ def connect_backend(ray_address: str) -> Backend:
         return LocalBackend()
 
     try:
-        import ray  # type: ignore[import-not-found]
+        import ray
     except ImportError:
         logger.warning("ray not installed; falling back to LocalBackend (address=%s)", address)
         return LocalBackend()

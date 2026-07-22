@@ -32,9 +32,7 @@ _QUEUE_BY_CAPABILITY: Final[dict[Capability, str]] = {
     Capability.GPU: "ancora-gpu",
     Capability.IO: "ancora-io",
 }
-_CAPABILITY_BY_QUEUE: Final[dict[str, Capability]] = {
-    q: c for c, q in _QUEUE_BY_CAPABILITY.items()
-}
+_CAPABILITY_BY_QUEUE: Final[dict[str, Capability]] = {q: c for c, q in _QUEUE_BY_CAPABILITY.items()}
 
 # The queue the workflow (orchestration) workers poll. Separate from activity
 # capability queues so orchestration is never starved by heavy compute.

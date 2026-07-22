@@ -22,6 +22,7 @@ ancora-common = { workspace = true }
 ancora-cli = { workspace = true }
 ancora-api = { workspace = true }
 ancora-worker = { workspace = true }
+ancora-activity-worker = { workspace = true }
 
 [dependency-groups]
 # Shared dev toolchain, installed into the workspace virtualenv via `uv sync`.
@@ -51,7 +52,7 @@ select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501", "B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ancora", "ancora_api", "ancora_cli"]
+known-first-party = ["ancora", "ancora_api", "ancora_cli", "ancora_common", "ancora_worker", "ancora_activity_worker"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -71,6 +72,7 @@ mypy_path = [
     "packages/cli",
     "services/api-gateway",
     "services/workflow-workers",
+    "services/activity-workers",
 ]
 files = [
     "packages/sdk-python/ancora",
@@ -78,11 +80,12 @@ files = [
     "packages/cli/ancora_cli",
     "services/api-gateway/ancora_api",
     "services/workflow-workers/ancora_worker",
+    "services/activity-workers/ancora_activity_worker",
 ]
 
 [[tool.mypy.overrides]]
 # Third-party libs without stubs — don't fail the strict gate on them.
-module = ["ray.*", "temporalio.*"]
+module = ["ray.*", "temporalio.*", "redis.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

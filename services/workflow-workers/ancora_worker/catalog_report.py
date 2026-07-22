@@ -11,11 +11,10 @@ import hashlib
 import inspect
 import logging
 
+from ancora import __version__ as sdk_version
 from ancora_common import DEFAULT_PROJECT_ID
 from ancora_common.catalog import register_workflow
 from ancora_common.db import session_scope
-
-from ancora import __version__ as sdk_version
 from ancora_worker.examples import WORKFLOW_NAMES
 
 logger = logging.getLogger("ancora.worker.catalog")

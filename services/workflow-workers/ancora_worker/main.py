@@ -11,10 +11,10 @@ import contextlib
 import logging
 import signal
 
-from ancora_common.logging import configure_logging
-from ancora_common.temporal import connect
 from temporalio.worker import Worker
 
+from ancora_common.logging import configure_logging
+from ancora_common.temporal import connect
 from ancora_worker.catalog_report import report_catalog
 from ancora_worker.examples import ACTIVITIES, WORKFLOWS
 from ancora_worker.settings import WorkerSettings

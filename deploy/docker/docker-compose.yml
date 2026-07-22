@@ -94,6 +94,7 @@ services:
       - ANCORA_TEMPORAL_ADDRESS=temporal:7233
       - ANCORA_TEMPORAL_NAMESPACE=default
       - ANCORA_TASK_QUEUE=ancora-default
+      - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_CORS_ORIGINS=["http://localhost:3000"]
     ports:
       - "8080:8080"
@@ -113,6 +114,42 @@ services:
       - ANCORA_TEMPORAL_NAMESPACE=default
       - ANCORA_TASK_QUEUE=ancora-default
     restart: on-failure
+
+  # Activity worker (execution runtime). Defaults to the in-process LocalBackend;
+  # set ANCORA_RAY_ADDRESS to attach to the `ray-head` service (profile: ray).
+  activity-worker:
+    build:
+      context: ../..
+      dockerfile: services/activity-workers/Dockerfile
+    depends_on:
+      temporal:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
+      - ANCORA_TEMPORAL_ADDRESS=temporal:7233
+      - ANCORA_TEMPORAL_NAMESPACE=default
+      - ANCORA_REDIS_URL=redis://redis:6379/0
+      - ANCORA_POOLS=["cpu","io"]
+      - ANCORA_TOTAL_CPUS=4
+      # - ANCORA_RAY_ADDRESS=ray://ray-head:10001   # enable with --profile ray
+    restart: on-failure
+
+  # Optional Ray head (AN-025). Off by default to keep `make up` light and
+  # reliable; start it with:  docker compose --profile ray up
+  ray-head:
+    image: rayproject/ray:2.9.3-py311
+    profiles: ["ray"]
+    command: >
+      ray start --head --port=6379 --ray-client-server-port=10001
+      --dashboard-host=0.0.0.0 --block
+    ports:
+      - "10001:10001"   # ray client
+      - "8265:8265"     # ray dashboard
+    shm_size: "2gb"
 
   web:
     build:

@@ -56,7 +56,7 @@ export function Nav() {
         })}
       </nav>
       <div className="mt-auto p-3 text-[11px] text-muted-foreground">
-        Phase 0 · walking skeleton
+        Phase 2 · execution runtime
       </div>
     </aside>
   );

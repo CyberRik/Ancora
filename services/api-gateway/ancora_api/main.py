@@ -10,6 +10,8 @@ Endpoints:
   GET  /v1/runs                        list runs
   GET  /v1/runs/{run_id}               get a run (refreshed from Temporal)
   POST /v1/runs/{run_id}/cancel        cancel a run
+  GET  /v1/workers                     list activity workers + live health
+  GET  /v1/queues                      per-capability queue depth/worker counts
 """
 
 from __future__ import annotations
@@ -18,18 +20,18 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from ancora_common import db
-from ancora_common.logging import configure_logging
-from ancora_common.temporal import connect
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ancora_api import __version__
-from ancora_api.routers import runs, workflows
+from ancora_api.routers import runs, workers, workflows
 from ancora_api.service import NotFoundError
 from ancora_api.settings import get_settings
+from ancora_common import db
+from ancora_common.logging import configure_logging
+from ancora_common.temporal import connect
 
 logger = logging.getLogger("ancora.api")
 
@@ -115,6 +117,7 @@ def create_app() -> FastAPI:
 
     app.include_router(workflows.router)
     app.include_router(runs.router)
+    app.include_router(workers.router)
     return app
 
 

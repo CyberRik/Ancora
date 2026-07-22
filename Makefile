@@ -45,6 +45,9 @@ logs: ## Tail stack logs
 e2e: ## Run the Phase 1 end-to-end smoke check against a running stack
 	uv run python scripts/e2e_phase1.py
 
+e2e-phase2: ## Run the Phase 2 (execution runtime) end-to-end smoke check
+	uv run python scripts/e2e_phase2.py
+
 docs: ## Serve the docs site locally
 	uv run --with mkdocs-material mkdocs serve
 

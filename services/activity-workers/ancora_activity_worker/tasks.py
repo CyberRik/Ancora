@@ -27,6 +27,11 @@ class ComputeRequest(BaseModel):
     num_cpus: float = 1.0
     num_gpus: float = 0.0
     accelerator_type: str | None = None
+    # Fault injection for the checkpoint-resume test: crash once at this batch
+    # (the driver only arms it on attempt 1). ``fail_hold`` keeps the compute
+    # alive briefly after checkpointing so the heartbeat is flushed before failure.
+    fail_at_batch: int = 0
+    fail_hold: float = 0.0
 
 
 class ComputeResult(BaseModel):
@@ -37,8 +42,12 @@ class ComputeResult(BaseModel):
     resumed_from: int = 0
 
 
-class _Cancelled(Exception):
+class Cancelled(Exception):
     """Raised inside a compute when cooperative cancellation is observed."""
+
+
+class InjectedCrash(Exception):
+    """A deterministic crash used to prove checkpoint-resume (test-only path)."""
 
 
 def batched_compute(
@@ -49,6 +58,8 @@ def batched_compute(
     batch_seconds: float,
     start_from: int,
     acc: int,
+    fail_at_batch: int = 0,
+    fail_hold: float = 0.0,
 ) -> dict[str, Any]:
     """Accumulate a checksum over ``total_batches``, checkpointing each batch.
 
@@ -58,15 +69,21 @@ def batched_compute(
     checksum = acc
     for i in range(start_from, total_batches):
         if progress.cancelled():
-            raise _Cancelled()
+            raise Cancelled()
         if batch_seconds:
             time.sleep(batch_seconds)
         checksum += (i + 1) * 7
         # Checkpoint AFTER the batch completes: on resume we start at i+1.
         progress.report({"batch": i + 1, "acc": checksum})
+        if fail_at_batch and (i + 1) == fail_at_batch:
+            # Give the driver a moment to flush the just-reported checkpoint as a
+            # heartbeat before we blow up, so the retry can read it.
+            if fail_hold:
+                time.sleep(fail_hold)
+            raise InjectedCrash(f"injected crash at batch {i + 1}")
+    # ``resumed_from`` is owned by the driver (it knows the real resume point).
     return {
         "label": label,
         "batches": total_batches,
         "checksum": checksum,
-        "resumed_from": start_from,
     }

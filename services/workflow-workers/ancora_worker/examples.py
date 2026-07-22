@@ -7,11 +7,13 @@ happens in the ``greet`` activity.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from pydantic import BaseModel
 
 from ancora import Workflow, activity, workflow
+from ancora_common.resources import Capability, queue_for
 
 
 class GreetInput(BaseModel):
@@ -69,7 +71,37 @@ class GatedWorkflow(Workflow):
         return self._at_gate
 
 
+@workflow.defn(name="pipeline")
+class PipelineWorkflow(Workflow):
+    """Dispatches a 'GPU-ish' compute activity to the execution runtime (Phase 2).
+
+    The activity (``ray_compute_async``) lives on the ``cpu`` capability queue and
+    is served by the *activity* worker, which runs it on Ray (or the LocalBackend)
+    via async completion — this workflow worker never touches Ray. Demonstrates the
+    orchestration/execution split end-to-end.
+    """
+
+    @workflow.run
+    async def run(self, params: dict[str, Any]) -> dict[str, Any]:
+        req = {
+            "label": params.get("label", "pipeline"),
+            "batches": params.get("batches", 6),
+            "batch_seconds": params.get("batch_seconds", 0.2),
+        }
+        result: dict[str, Any] = await self.call(
+            "ray_compute_async",
+            req,
+            task_queue=queue_for(Capability.CPU),
+            start_to_close_timeout=timedelta(minutes=10),
+        )
+        return {"compute": result, "steps": 1}
+
+
 # Registry consumed by the worker and the catalog reporter.
-WORKFLOWS: list[type] = [HelloWorkflow, GatedWorkflow]
+WORKFLOWS: list[type] = [HelloWorkflow, GatedWorkflow, PipelineWorkflow]
 ACTIVITIES = [greet]
-WORKFLOW_NAMES: dict[type, str] = {HelloWorkflow: "hello", GatedWorkflow: "gated"}
+WORKFLOW_NAMES: dict[type, str] = {
+    HelloWorkflow: "hello",
+    GatedWorkflow: "gated",
+    PipelineWorkflow: "pipeline",
+}

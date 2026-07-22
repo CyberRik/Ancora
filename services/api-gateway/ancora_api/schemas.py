@@ -56,3 +56,29 @@ class StartRunResponse(BaseModel):
     temporal_wf_id: str
     status: str
     links: RunLinks
+
+
+# --------------------------------------------------------------------------- #
+# Execution runtime (Phase 2)
+# --------------------------------------------------------------------------- #
+class WorkerOut(BaseModel):
+    worker_id: str
+    host: str | None
+    pid: int | None
+    pools: list[str]
+    task_queues: list[str]
+    resources: dict[str, Any]
+    # "live" (Redis TTL present), "stale" (row exists, TTL lapsed), or "unknown"
+    # (Redis unreachable — fall back to last_heartbeat_at).
+    status: str
+    registered_at: datetime
+    last_heartbeat_at: datetime | None
+
+
+class QueueOut(BaseModel):
+    queue: str
+    capability: str | None
+    worker_count: int
+    live_worker_count: int
+    # Pending demand; wired to the scheduler's watermark in Phase 3 (0 for now).
+    backlog: int

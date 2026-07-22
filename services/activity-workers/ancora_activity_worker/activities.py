@@ -28,7 +28,6 @@ from temporalio import activity
 from temporalio.client import Client
 from temporalio.exceptions import ApplicationError
 
-from ancora_common.resources import ResourceSpec
 from ancora_activity_worker.ray_bridge import Backend, LiveProgress, TaskHandle
 from ancora_activity_worker.runtime import (
     get_backend,
@@ -36,6 +35,7 @@ from ancora_activity_worker.runtime import (
     get_node_recorder,
 )
 from ancora_activity_worker.tasks import ComputeRequest, ComputeResult, batched_compute
+from ancora_common.resources import ResourceSpec
 
 logger = logging.getLogger("ancora.runtime.activities")
 
@@ -64,7 +64,9 @@ def _resume_point(info: activity.Info) -> tuple[int, int]:
     return 0, 0
 
 
-def _bind(req: ComputeRequest, start_from: int, acc: int) -> Any:
+def _bind(req: ComputeRequest, start_from: int, acc: int, *, attempt: int = 1) -> Any:
+    # Fault injection only fires on the first attempt; the retry must succeed.
+    fail_at_batch = req.fail_at_batch if attempt == 1 else 0
     return functools.partial(
         batched_compute,
         label=req.label,
@@ -72,10 +74,14 @@ def _bind(req: ComputeRequest, start_from: int, acc: int) -> Any:
         batch_seconds=req.batch_seconds,
         start_from=start_from,
         acc=acc,
+        fail_at_batch=fail_at_batch,
+        fail_hold=req.fail_hold,
     )
 
 
-def _node_meta(req: ComputeRequest, backend: Backend, task: TaskHandle, model: str) -> dict[str, Any]:
+def _node_meta(
+    req: ComputeRequest, backend: Backend, task: TaskHandle, model: str
+) -> dict[str, Any]:
     info = activity.info()
     return {
         "temporal_wf_id": info.workflow_id,
@@ -93,10 +99,15 @@ async def ray_compute(req: ComputeRequest) -> ComputeResult:
     """Model A: dispatch to the backend, heartbeat progress, resume on retry."""
     backend = get_backend()
     recorder = get_node_recorder()
-    start_from, acc = _resume_point(activity.info())
+    info = activity.info()
+    start_from, acc = _resume_point(info)
 
     progress = LiveProgress()
-    task = backend.submit(_bind(req, start_from, acc), resources=_resources(req), progress=progress)
+    task = backend.submit(
+        _bind(req, start_from, acc, attempt=info.attempt),
+        resources=_resources(req),
+        progress=progress,
+    )
     await recorder.record_start(_node_meta(req, backend, task, "inline"))
 
     try:
