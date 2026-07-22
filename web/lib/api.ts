@@ -196,4 +196,14 @@ export const WORKFLOW_SHAPES: Record<string, WorkflowShape> = {
       { label: "ray_compute_async", kind: "dispatch", detail: "queued on ancora-cpu, run on Ray / local, completed out-of-band", runsOn: "activity-worker" },
     ],
   },
+  research_agent: {
+    summary: "Orchestrates LLM nodes to search, summarize, and synthesize a report with a human-in-the-loop gate.",
+    steps: [
+      { label: "search", kind: "activity", detail: "LLM agent searches for sources", runsOn: "activity-worker" },
+      { label: "summarize (fan-out)", kind: "activity", detail: "parallel summarization of each source", runsOn: "activity-worker" },
+      { label: "synthesize", kind: "activity", detail: "synthesize a final report from summaries", runsOn: "activity-worker" },
+      { label: "approval gate", kind: "gate", detail: "durably waits for human approval before publishing", runsOn: "workflow-worker" },
+      { label: "publish", kind: "activity", detail: "publishes the report if approved", runsOn: "activity-worker" },
+    ],
+  },
 };

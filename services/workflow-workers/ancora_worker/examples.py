@@ -121,12 +121,12 @@ class ResearchAgentWorkflow(Workflow):
         n = int(params.get("summaries", 3))
         cpu_q = queue_for(Capability.CPU)
         io_q = queue_for(Capability.IO)
-        providers = ["mock", "mock-secondary"]
+        providers = ["gemini"]
 
         def llm_input(prompt: str) -> dict[str, Any]:
             return {
                 "messages": [{"role": "user", "content": prompt}],
-                "model": "mock-small",
+                "model": "gemini-3.5-flash-lite",
                 "providers": providers,
             }
 
@@ -222,31 +222,52 @@ _RETRY_BACKOFF_SECONDS = 5.0  # visible "worker down, rescheduling" window
 
 @activity.defn(name="ingest_dataset")
 async def ingest_dataset(inp: DemoInput) -> dict[str, Any]:
-    """Step 1 — pull in a large dataset. The expensive step we must never redo."""
-    await asyncio.sleep(_INGEST_SECONDS)
-    return {"status": "ingested", "records": 1_000_000, "size": "5 GB"}
+    """Step 1 — pull in a real dataset. The expensive step we must never redo."""
+    import httpx
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get("https://dummyjson.com/posts?limit=150")
+        resp.raise_for_status()
+        data = resp.json()
+        
+    posts = data.get("posts", [])
+    return {"status": "ingested", "records": len(posts), "data": posts, "size": f"{len(resp.content)} bytes"}
 
 
 @activity.defn(name="process_records")
 async def process_records(inp: dict[str, Any]) -> dict[str, Any]:
     """Step 2 — process the records, but *fail the first attempt*.
 
-    Attempt 1 does ~2s of "work" and then crashes, so the UI can show real progress
+    Attempt 1 does real CPU work and then crashes, so the UI can show real progress
     being lost to a mid-job failure (an OOM kill / eviction) with a retryable error.
     Temporal then waits a visible backoff and retries; the finished ingest step is
     replayed from history, not recomputed — exactly-once progress, no lost work.
-    (We raise instead of killing the process so the worker survives to serve the
-    retry — a hard crash would need Docker to restart the whole container.)
     """
+    import hashlib
     info = temporal_activity.info()
+    posts = inp.get("data", [])
+    
+    def do_work() -> int:
+        total_words = 0
+        for post in posts:
+            body = post.get("body", "")
+            total_words += len(body.split())
+            h = body.encode()
+            for _ in range(5000):
+                h = hashlib.sha256(h).digest()
+        return total_words
+
     if info.attempt == 1:
-        await asyncio.sleep(_PROCESS_WORK_SECONDS)  # looks like it's working…
+        await asyncio.to_thread(do_work)  # Do some real work to take time
         print("💥 Simulating a worker failure while processing records (attempt 1)", flush=True)
         raise RuntimeError("Worker failure: out-of-memory while processing records")
-    await asyncio.sleep(_PROCESS_SECONDS)
+        
+    total_words = await asyncio.to_thread(do_work)
+    
     return {
         "status": "processed",
-        "records": int(inp.get("records", 0)),
+        "records": len(posts),
+        "total_words": total_words,
         "recovered_on_attempt": info.attempt,
     }
 

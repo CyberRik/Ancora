@@ -190,12 +190,14 @@ name = "ancora"
 version = "0.1.0"
 source = { editable = "packages/sdk-python" }
 dependencies = [
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "temporalio" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "temporalio", specifier = ">=1.9,<2" },
 ]

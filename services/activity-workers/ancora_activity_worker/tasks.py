@@ -66,13 +66,25 @@ def batched_compute(
     Resumes at ``start_from`` with the carried ``acc`` so a retry after a crash
     does not redo completed batches.
     """
+    import hashlib
+    
     checksum = acc
     for i in range(start_from, total_batches):
         if progress.cancelled():
             raise Cancelled()
+            
         if batch_seconds:
-            time.sleep(batch_seconds)
-        checksum += (i + 1) * 7
+            # Do real CPU-intensive work to approximate batch_seconds
+            # For simplicity, just run a tight hashing loop
+            end_time = time.time() + batch_seconds
+            h = b"start"
+            while time.time() < end_time:
+                h = hashlib.sha256(h).digest()
+            # use the hash in the checksum
+            checksum += (i + 1) * int.from_bytes(h[:4], "little")
+        else:
+            checksum += (i + 1) * 7
+            
         # Checkpoint AFTER the batch completes: on resume we start at i+1.
         progress.report({"batch": i + 1, "acc": checksum})
         if fail_at_batch and (i + 1) == fail_at_batch:

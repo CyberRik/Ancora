@@ -34,7 +34,9 @@ def upgrade() -> None:
         sa.Column("node_id", sa.String(255), nullable=True),
         sa.Column("status", sa.String(16), nullable=False, server_default="pending"),
         sa.Column("result", JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint("key", name="uq_inbox_key"),
     )

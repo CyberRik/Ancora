@@ -153,6 +153,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    env_file:
+      - ../../.env
     environment:
       - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
       - ANCORA_TEMPORAL_ADDRESS=temporal:7233

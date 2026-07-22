@@ -33,6 +33,7 @@ from ancora.nodes.llm import (
     get_provider,
     register_provider,
 )
+from ancora.nodes.gemini_provider import GeminiProvider
 from ancora.nodes.registry import catalog, get, register
 
 __all__ = [
@@ -61,6 +62,7 @@ __all__ = [
     "LLMResponse",
     "LLMProvider",
     "MockProvider",
+    "GeminiProvider",
     "register_provider",
     "get_provider",
     # http

@@ -14,7 +14,7 @@ test("dashboard shell renders with nav and dark theme", async ({ page }) => {
 
   // Dashboard heading renders.
   await expect(
-    page.getByRole("heading", { name: "Dashboard" }),
+    page.getByRole("heading", { name: /Kill any worker/i }),
   ).toBeVisible();
 });
 

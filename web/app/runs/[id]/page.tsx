@@ -54,7 +54,15 @@ export default function RunDetailPage() {
     if (!run) return;
     setBusy(true);
     try {
-      await api.sendSignal(run.id, "approve");
+      if (run.workflow_name === "research_agent") {
+        await api.sendSignal(run.id, "submit_decision", {
+          gate_id: "publish",
+          approved: true,
+          comment: "Approved via UI",
+        });
+      } else {
+        await api.sendSignal(run.id, "approve");
+      }
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "approve failed");
@@ -80,7 +88,7 @@ export default function RunDetailPage() {
   const elapsed = startedMs ? fmtDuration(endMs - startedMs) : "—";
 
   // A gated run that is Running with no output yet is parked at its approval gate.
-  const atGate = run.workflow_name === "gated" && run.status === "Running" && !run.output;
+  const atGate = (run.workflow_name === "gated" || run.workflow_name === "research_agent") && run.status === "Running" && !run.output;
 
   return (
     <div className="max-w-4xl space-y-6">

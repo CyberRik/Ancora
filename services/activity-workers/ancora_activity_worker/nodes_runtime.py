@@ -23,6 +23,7 @@ from temporalio.exceptions import ApplicationError
 import ancora.nodes  # noqa: F401 — import registers the built-in node types
 from ancora.nodes.base import NodeContext, NodeError
 from ancora.nodes.llm import MockProvider, register_provider
+from ancora.nodes.gemini_provider import GeminiProvider
 from ancora.nodes.registry import get as get_node
 from ancora_activity_worker.runtime import get_inbox, get_node_recorder
 
@@ -32,6 +33,7 @@ logger = logging.getLogger("ancora.runtime.nodes")
 # at worker startup from configuration.
 register_provider(MockProvider("mock"))
 register_provider(MockProvider("mock-secondary"))
+register_provider(GeminiProvider())
 
 
 class NodeRequest(dict[str, Any]):
