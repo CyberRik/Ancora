@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Body, Depends, Header, Query, status
 
 from ancora_api.deps import get_service
 from ancora_api.schemas import (
@@ -63,3 +64,14 @@ async def cancel_run(
     service: WorkflowService = Depends(get_service),
 ) -> RunOut:
     return await service.cancel_run(run_id)
+
+
+@router.post("/runs/{run_id}/signals/{name}", response_model=RunOut)
+async def signal_run(
+    run_id: uuid.UUID,
+    name: str,
+    service: WorkflowService = Depends(get_service),
+    arg: Any = Body(default=None),
+) -> RunOut:
+    """Advance a durably-waiting workflow (e.g. approve a gate)."""
+    return await service.signal_run(run_id, name, arg)

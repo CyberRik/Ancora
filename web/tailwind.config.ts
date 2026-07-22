@@ -22,6 +22,7 @@ const config: Config = {
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         danger: "hsl(var(--danger))",
+        flow: "hsl(var(--flow))",
       },
       borderRadius: {
         lg: "0.75rem",

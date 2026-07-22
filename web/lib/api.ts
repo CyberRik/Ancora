@@ -122,8 +122,59 @@ export const api = {
     }),
   cancelRun: (id: string) =>
     req<Run>(`/v1/runs/${id}/cancel`, { method: "POST" }),
+  sendSignal: (id: string, name: string, arg?: unknown) =>
+    req<Run>(`/v1/runs/${id}/signals/${name}`, {
+      method: "POST",
+      body: JSON.stringify(arg ?? null),
+    }),
   listWorkers: (signal?: AbortSignal) =>
     req<Worker[]>("/v1/workers", { signal }),
   listQueues: (signal?: AbortSignal) =>
     req<Queue[]>("/v1/queues", { signal }),
+};
+
+// --------------------------------------------------------------------------- //
+// Workflow shapes — a small front-end catalog describing what each shipped
+// workflow *does*, so a run can be rendered as a readable pipeline of steps
+// rather than opaque JSON. (Until the event-sourced node projection lands in
+// Phase 4, per-run node state isn't on the wire; these describe the code path.)
+// --------------------------------------------------------------------------- //
+export type StepKind = "activity" | "gate" | "dispatch";
+
+export interface WorkflowStep {
+  label: string;
+  kind: StepKind;
+  detail: string;
+  /** Where the real compute happens for this step. */
+  runsOn: "workflow-worker" | "activity-worker";
+}
+
+export interface WorkflowShape {
+  summary: string;
+  steps: WorkflowStep[];
+}
+
+export const WORKFLOW_SHAPES: Record<string, WorkflowShape> = {
+  hello: {
+    summary: "Three activities in sequence — the canonical durable-execution smoke test.",
+    steps: [
+      { label: "greet", kind: "activity", detail: "Hello, {name}!", runsOn: "workflow-worker" },
+      { label: "greet", kind: "activity", detail: "wraps the previous result", runsOn: "workflow-worker" },
+      { label: "greet", kind: "activity", detail: "wraps it once more", runsOn: "workflow-worker" },
+    ],
+  },
+  gated: {
+    summary: "Runs an activity, waits durably for human approval, then finishes.",
+    steps: [
+      { label: "greet", kind: "activity", detail: "first activity", runsOn: "workflow-worker" },
+      { label: "approval gate", kind: "gate", detail: "waits for the approve signal — durably, indefinitely", runsOn: "workflow-worker" },
+      { label: "greet", kind: "activity", detail: "runs once approved", runsOn: "workflow-worker" },
+    ],
+  },
+  pipeline: {
+    summary: "Dispatches a GPU-ish compute activity to the execution runtime via async completion.",
+    steps: [
+      { label: "ray_compute_async", kind: "dispatch", detail: "queued on ancora-cpu, run on Ray / local, completed out-of-band", runsOn: "activity-worker" },
+    ],
+  },
 };

@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/node_modules
+**/.next
+**/.pnpm-store
+**/tsconfig.tsbuildinfo

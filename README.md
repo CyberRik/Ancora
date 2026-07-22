@@ -57,6 +57,68 @@ Then open:
 | API version | http://localhost:8080/v1/version |
 | Temporal UI | http://localhost:8233 |
 
+### Docker commands
+
+`make up` / `make down` / `make logs` are thin wrappers over Docker Compose. To
+drive it directly (compose file lives in `deploy/docker/`):
+
+```bash
+# from the repo root — start everything, rebuilding changed images
+docker compose -f deploy/docker/docker-compose.yml up --build
+
+# run in the background (detached), then follow logs
+docker compose -f deploy/docker/docker-compose.yml up --build -d
+docker compose -f deploy/docker/docker-compose.yml logs -f
+
+# stop the stack; add -v to also wipe the Postgres volume (fresh DB)
+docker compose -f deploy/docker/docker-compose.yml down
+docker compose -f deploy/docker/docker-compose.yml down -v
+```
+
+> **Tip:** export `COMPOSE_FILE=deploy/docker/docker-compose.yml` once and you can
+> drop the `-f …` flag from every command below.
+
+Everyday operations:
+
+```bash
+# see what's running / crashed
+docker compose -f deploy/docker/docker-compose.yml ps
+
+# tail one service's logs (services: postgres redis temporal temporal-ui
+# migrate api worker activity-worker web ray-head)
+docker compose -f deploy/docker/docker-compose.yml logs -f api
+
+# rebuild + restart just one service after a code change
+docker compose -f deploy/docker/docker-compose.yml up -d --build activity-worker
+
+# apply DB migrations on demand (also runs automatically on `up`)
+docker compose -f deploy/docker/docker-compose.yml run --rm migrate
+
+# open a shell inside a running container
+docker compose -f deploy/docker/docker-compose.yml exec api bash
+```
+
+Optional **Ray head node** (distributed/GPU backend) is behind a profile, so it
+only starts when asked:
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml --profile ray up --build
+# Ray dashboard → http://localhost:8265 · Ray client → localhost:10001
+```
+
+Without the `ray` profile, activity workers use the in-process local backend — no
+Ray required for dev or CI.
+
+| Service | Port | What it is |
+|---|---|---|
+| `web` | 3000 | Next.js dashboard |
+| `api` | 8080 | FastAPI control plane |
+| `temporal-ui` | 8233 | Temporal web UI |
+| `temporal` | 7233 | Temporal gRPC frontend |
+| `postgres` | 5432 | Catalog + run projection |
+| `redis` | 6379 | Worker liveness |
+| `ray-head` | 8265 / 10001 | Ray dashboard / client (profile `ray`) |
+
 ### Local development (without Docker)
 
 ```bash

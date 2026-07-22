@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -181,6 +182,22 @@ class WorkflowService:
                 raise NotFoundError(f"run '{run_id}' not found")
             handle = self.client.get_workflow_handle(run.temporal_wf_id, run_id=run.temporal_run_id)
             await handle.cancel()
+            await self._refresh(run)
+            return _to_out(run)
+
+    async def signal_run(self, run_id: uuid.UUID, name: str, arg: Any = None) -> RunOut:
+        """Deliver a signal to a running workflow (e.g. ``approve`` a durable gate).
+
+        Signals are how a durably-waiting workflow is advanced from the outside —
+        the human-in-the-loop path (RFC-0001 §12). The workflow may have been
+        parked for seconds or days, across worker restarts; the signal resumes it.
+        """
+        async with session_scope() as session:
+            run = await _load_run(session, run_id)
+            if run is None:
+                raise NotFoundError(f"run '{run_id}' not found")
+            handle = self.client.get_workflow_handle(run.temporal_wf_id, run_id=run.temporal_run_id)
+            await handle.signal(name) if arg is None else await handle.signal(name, arg)
             await self._refresh(run)
             return _to_out(run)
 
