@@ -4,19 +4,32 @@ import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 
 import { api, type RunActivity, type RunLive, type Run } from "@/lib/api";
 
 /**
- * The show-off page: a *real* worker crash and recovery.
+ * The show-off page: a real data pipeline that survives a mid-run worker failure.
  *
- * Clicking "Run the crash" starts the `durability_demo` workflow, whose GPU
- * training step kills its own worker process (os._exit) on the first attempt.
- * Everything on screen is driven by real Temporal state pulled from the API —
- * the attempt counter ticking 1 → 2, the real failure message, the worker
- * identity changing — so a visitor sees an actual failure survive, not a canned
- * animation.
+ * `durability_demo` runs ingest → process → export. The process step works for a
+ * couple of seconds, then fails (a simulated OOM). Temporal waits a visible ~5s
+ * backoff and retries; the finished ingest step is replayed from history, not
+ * recomputed. The crash, the retry backoff, the attempt counter, and the failure
+ * message below are Temporal's *real* state — the per-step progress bars are the
+ * only visualization aid. Paced deliberately so a visitor can actually watch the
+ * failure happen and heal. The page reconnects to an in-progress run too.
  */
 
 const TERMINAL = new Set(["Completed", "Failed", "Cancelled", "Terminated", "TimedOut"]);
 
-type Phase = "idle" | "downloading" | "training" | "crashed" | "recovering" | "completed" | "failed";
+// Kept in sync with the workflow's activity timings (examples.py).
+const BACKOFF_SECONDS = 5;
+const DUR = { ingest: 3, process: 3, export: 2 };
+
+type Phase =
+  | "idle"
+  | "ingesting"
+  | "processing"
+  | "rescheduling"
+  | "recovering"
+  | "exporting"
+  | "completed"
+  | "failed";
 
 interface DemoEvent {
   key: string;
@@ -25,11 +38,9 @@ interface DemoEvent {
   text: string;
 }
 
-function trainingActivity(live: RunLive | null): RunActivity | null {
+function processActivity(live: RunLive | null): RunActivity | null {
   if (!live) return null;
-  return (
-    live.activities.find((a) => /train/i.test(a.activity_type)) ?? live.activities[0] ?? null
-  );
+  return live.activities.find((a) => /process/i.test(a.activity_type)) ?? live.activities[0] ?? null;
 }
 
 export default function DemoPage() {
@@ -38,12 +49,14 @@ export default function DemoPage() {
   const [events, setEvents] = useState<DemoEvent[]>([]);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nowTs, setNowTs] = useState(Date.now());
 
-  // Sticky facts observed across polls (so the narrative doesn't flicker).
   const seen = useRef<Set<string>>(new Set());
   const maxAttempt = useRef(1);
   const workers = useRef<Set<string>>(new Set());
   const crashObserved = useRef(false);
+  const crashAt = useRef<number | null>(null);
+  const phaseStart = useRef<{ phase: Phase; at: number }>({ phase: "idle", at: Date.now() });
 
   const pushEvent = useCallback((e: DemoEvent) => {
     if (seen.current.has(e.key)) return;
@@ -51,19 +64,20 @@ export default function DemoPage() {
     setEvents((prev) => [...prev, e]);
   }, []);
 
-  const reset = useCallback(() => {
+  const resetTracking = useCallback(() => {
     seen.current = new Set();
     maxAttempt.current = 1;
     workers.current = new Set();
     crashObserved.current = false;
+    crashAt.current = null;
     setEvents([]);
     setLive(null);
-    setRun(null);
     setError(null);
   }, []);
 
   const start = useCallback(async () => {
-    reset();
+    resetTracking();
+    setRun(null);
     setStarting(true);
     try {
       const res = await api.startRun("durability_demo", { message: "start" });
@@ -75,7 +89,45 @@ export default function DemoPage() {
     } finally {
       setStarting(false);
     }
-  }, [reset, pushEvent]);
+  }, [resetTracking, pushEvent]);
+
+  // Reconnect on mount to the most recent durability_demo run.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const runs = await api.listRuns();
+        if (cancelled) return;
+        const demo = runs.find((r) => r.workflow_name === "durability_demo");
+        if (demo) {
+          setRun(demo);
+          pushEvent(
+            now(
+              "reconnected",
+              "flow",
+              TERMINAL.has(demo.status)
+                ? "Showing the most recent run."
+                : "Reconnected to a run already in progress.",
+            ),
+          );
+        }
+      } catch {
+        /* stack may be down; the Run button surfaces that */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pushEvent]);
+
+  const isRunning = !!run && !TERMINAL.has(run.status);
+
+  // Smooth clock for countdown + progress while a run is active.
+  useEffect(() => {
+    if (!isRunning) return;
+    const t = setInterval(() => setNowTs(Date.now()), 150);
+    return () => clearInterval(t);
+  }, [isRunning]);
 
   // Poll real state while the run is active.
   useEffect(() => {
@@ -90,7 +142,7 @@ export default function DemoPage() {
         if (stop) return;
         setRun(r);
         if (l) setLive(l);
-        deriveEvents(r, l, { pushEvent, maxAttempt, workers, crashObserved });
+        deriveEvents(r, l, { pushEvent, maxAttempt, workers, crashObserved, crashAt });
       } catch {
         /* transient — keep polling */
       }
@@ -103,39 +155,50 @@ export default function DemoPage() {
     };
   }, [run, pushEvent]);
 
-  const act = trainingActivity(live);
+  const act = processActivity(live);
   const attempt = Math.max(maxAttempt.current, act?.attempt ?? 1);
   const recovered = attempt >= 2 || crashObserved.current;
   const phase = derivePhase(run, live, recovered);
-  const isRunning = !!run && !TERMINAL.has(run.status);
+
+  // Track when each phase began (for progress bars).
+  useEffect(() => {
+    if (phaseStart.current.phase !== phase) {
+      phaseStart.current = { phase, at: Date.now() };
+    }
+  }, [phase]);
+  const elapsedInPhase = (nowTs - phaseStart.current.at) / 1000;
+
+  const backoffRemaining =
+    phase === "rescheduling" && crashAt.current
+      ? Math.max(0, BACKOFF_SECONDS - (nowTs - crashAt.current) / 1000)
+      : 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
-      {/* Hero */}
       <header className="max-w-2xl">
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-danger">
           Live failure demo
         </p>
         <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-          Kill the worker. The work survives.
+          A worker fails mid-run. The work survives.
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          This runs a real workflow. Halfway through, the training step{" "}
-          <span className="text-foreground">crashes its own worker process</span> — an actual
-          <code className="mx-1 rounded bg-muted px-1 text-foreground">os._exit(1)</code>. Temporal
-          notices the death, reschedules onto a fresh worker, and finishes from the last checkpoint.
-          Nothing below is animated on a timer — it&apos;s Temporal&apos;s real state.
+          This runs a real 3-step pipeline — <span className="text-foreground">ingest → process →
+          export</span>. The process step works for a moment, then{" "}
+          <span className="text-foreground">fails</span> (a simulated out-of-memory crash). Temporal
+          waits a real retry backoff and reruns it, replaying the finished ingest step from history
+          instead of recomputing it. The crash, the backoff countdown, and the attempt counter below
+          are Temporal&apos;s real state.
         </p>
       </header>
 
-      {/* Action */}
       <div className="flex flex-wrap items-center gap-4">
         <button
           onClick={start}
           disabled={starting || isRunning}
           className="inline-flex items-center gap-2 rounded-lg bg-danger px-5 py-2.5 text-sm font-semibold text-background transition hover:opacity-90 disabled:opacity-50"
         >
-          {starting ? "Starting…" : isRunning ? "Running…" : run ? "Run it again" : "Run the crash"}
+          {starting ? "Starting…" : isRunning ? "Running…" : run ? "Run it again" : "Run the pipeline"}
         </button>
         {run && <StatusChip phase={phase} attempt={attempt} />}
       </div>
@@ -146,14 +209,24 @@ export default function DemoPage() {
         </div>
       )}
 
-      {/* The stage */}
       {run && (
         <>
-          <Stage phase={phase} attempt={attempt} live={live} />
+          {(phase === "rescheduling" || phase === "recovering") && (
+            <CrashBanner
+              phase={phase}
+              attempt={attempt}
+              remaining={backoffRemaining}
+              failure={act?.last_failure ?? null}
+            />
+          )}
+
+          <Stage phase={phase} attempt={attempt} live={live} elapsed={elapsedInPhase} />
+
           <div className="grid gap-6 md:grid-cols-2">
             <EventLog events={events} />
             <SidePanel run={run} live={live} attempt={attempt} workers={workers.current} />
           </div>
+
           {run.status === "Completed" && <SuccessResult run={run} attempt={attempt} />}
           {TERMINAL.has(run.status) && run.status !== "Completed" && (
             <div className="rounded-xl border border-danger/40 bg-card p-4 text-sm text-danger">
@@ -176,13 +249,14 @@ function derivePhase(run: Run | null, live: RunLive | null, recovered: boolean):
   if (run.status === "Completed") return "completed";
   if (TERMINAL.has(run.status)) return "failed";
   const note = live?.status_note ?? "";
-  const act = trainingActivity(live);
-  const failing = !!act?.last_failure || (act ? act.state === "Scheduled" && act.attempt >= 2 : false);
-  if (failing && recovered && (act?.state ?? "") !== "Started") return "crashed";
-  if (recovered) return "recovering";
-  if (/train/i.test(note)) return "training";
-  if (/download/i.test(note)) return "downloading";
-  return "training";
+  const act = processActivity(live);
+  // Backoff window: the step has failed and Temporal is waiting to retry it.
+  if (act?.last_failure && act.state !== "Started") return "rescheduling";
+  if (recovered && (act?.state === "Started" || /process/i.test(note))) return "recovering";
+  if (/export/i.test(note)) return "exporting";
+  if (/process/i.test(note)) return "processing";
+  if (/ingest/i.test(note)) return "ingesting";
+  return "ingesting";
 }
 
 function deriveEvents(
@@ -193,16 +267,17 @@ function deriveEvents(
     maxAttempt: MutableRefObject<number>;
     workers: MutableRefObject<Set<string>>;
     crashObserved: MutableRefObject<boolean>;
+    crashAt: MutableRefObject<number | null>;
   },
 ) {
-  const { pushEvent, maxAttempt, workers, crashObserved } = refs;
+  const { pushEvent, maxAttempt, workers, crashObserved, crashAt } = refs;
   const note = live?.status_note ?? "";
-  const act = trainingActivity(live);
+  const act = processActivity(live);
 
-  if (/download/i.test(note)) pushEvent(now("downloading", "flow", "Downloading the dataset…"));
-  if (/train/i.test(note)) {
-    pushEvent(now("download-done", "success", "Dataset downloaded and checkpointed to history."));
-    pushEvent(now("training", "flow", "GPU training started (attempt 1)."));
+  if (/ingest/i.test(note)) pushEvent(now("ingesting", "flow", "Ingesting the dataset…"));
+  if (/process/i.test(note)) {
+    pushEvent(now("ingest-done", "success", "Dataset ingested and checkpointed to history."));
+    pushEvent(now("processing", "flow", "Processing records started (attempt 1)."));
   }
   if (act) {
     if (act.attempt > maxAttempt.current) maxAttempt.current = act.attempt;
@@ -211,22 +286,23 @@ function deriveEvents(
   const crashed = (act?.attempt ?? 1) >= 2 || !!act?.last_failure;
   if (crashed && !crashObserved.current) {
     crashObserved.current = true;
-    const why = act?.last_failure ? ` (${short(act.last_failure)})` : " — heartbeat stopped";
-    pushEvent(now("crash", "danger", `💥 Worker process died${why}. Temporal detected it.`));
+    crashAt.current = Date.now();
+    const why = act?.last_failure ? ` — ${short(act.last_failure)}` : "";
+    pushEvent(now("crash", "danger", `💥 The process step failed${why}. Temporal caught it.`));
+    pushEvent(now("backoff", "warning", "Waiting out the retry backoff, then rerunning the step…"));
   }
-  if ((act?.attempt ?? 1) >= 2) {
+  if ((act?.attempt ?? 1) >= 2 && act?.state === "Started") {
     pushEvent(
-      now(
-        "recovered",
-        "warning",
-        `Rescheduled onto a fresh worker — resuming at attempt ${act?.attempt}. The download was not re-run.`,
-      ),
+      now("recovered", "warning", `Rerunning the step (attempt ${act?.attempt}). Ingest was not repeated.`),
     );
   }
+  if (/export/i.test(note)) {
+    pushEvent(now("exporting", "flow", "Records processed. Exporting the results…"));
+  }
   if (run.status === "Completed") {
-    const on = (run.output?.training as Record<string, unknown> | undefined)?.recovered_on_attempt;
+    const on = (run.output?.process as Record<string, unknown> | undefined)?.recovered_on_attempt;
     pushEvent(
-      now("completed", "success", `Completed — the work finished intact${on ? ` on attempt ${on}` : ""}. Zero data lost.`),
+      now("completed", "success", `Pipeline finished intact${on ? ` (recovered on attempt ${on})` : ""}. Zero data lost.`),
     );
   }
 }
@@ -236,7 +312,7 @@ function now(key: string, tone: DemoEvent["tone"], text: string): DemoEvent {
 }
 
 function short(s: string): string {
-  return s.length > 60 ? s.slice(0, 57) + "…" : s;
+  return s.length > 64 ? s.slice(0, 61) + "…" : s;
 }
 
 // --------------------------------------------------------------------------- //
@@ -244,23 +320,25 @@ function short(s: string): string {
 // --------------------------------------------------------------------------- //
 const PHASE_LABEL: Record<Phase, { text: string; tone: string }> = {
   idle: { text: "Ready", tone: "muted-foreground" },
-  downloading: { text: "Downloading", tone: "flow" },
-  training: { text: "Training", tone: "flow" },
-  crashed: { text: "Worker died — recovering", tone: "danger" },
-  recovering: { text: "Resumed on new worker", tone: "warning" },
+  ingesting: { text: "Ingesting", tone: "flow" },
+  processing: { text: "Processing", tone: "flow" },
+  rescheduling: { text: "Worker failed — rescheduling", tone: "danger" },
+  recovering: { text: "Rerunning the step", tone: "warning" },
+  exporting: { text: "Exporting", tone: "flow" },
   completed: { text: "Survived", tone: "success" },
   failed: { text: "Failed", tone: "danger" },
 };
 
 function StatusChip({ phase, attempt }: { phase: Phase; attempt: number }) {
   const p = PHASE_LABEL[phase];
+  const animated = !["idle", "completed", "failed"].includes(phase);
   return (
     <span
       className="inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs"
       style={{ color: `hsl(var(--${p.tone}))`, borderColor: `hsl(var(--${p.tone}) / 0.4)` }}
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${phase === "crashed" || phase === "training" || phase === "downloading" || phase === "recovering" ? "animate-pulse" : ""}`}
+        className={`h-1.5 w-1.5 rounded-full ${animated ? "animate-pulse" : ""}`}
         style={{ backgroundColor: `hsl(var(--${p.tone}))` }}
       />
       {p.text}
@@ -269,39 +347,130 @@ function StatusChip({ phase, attempt }: { phase: Phase; attempt: number }) {
   );
 }
 
-function Stage({ phase, attempt, live }: { phase: Phase; attempt: number; live: RunLive | null }) {
-  const downloadDone = phase !== "downloading" && phase !== "idle";
-  const trainState: "pending" | "active" | "crashed" | "done" =
-    phase === "completed"
-      ? "done"
-      : phase === "crashed"
+function CrashBanner({
+  phase,
+  attempt,
+  remaining,
+  failure,
+}: {
+  phase: Phase;
+  attempt: number;
+  remaining: number;
+  failure: string | null;
+}) {
+  const isBackoff = phase === "rescheduling";
+  const tone = isBackoff ? "danger" : "warning";
+  const pct = isBackoff ? ((BACKOFF_SECONDS - remaining) / BACKOFF_SECONDS) * 100 : 100;
+  return (
+    <div
+      className="rounded-xl border p-4"
+      style={{
+        borderColor: `hsl(var(--${tone}) / 0.5)`,
+        backgroundColor: `hsl(var(--${tone}) / 0.06)`,
+        boxShadow: `0 0 0 3px hsl(var(--${tone}) / 0.08)`,
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg"
+            style={{ backgroundColor: `hsl(var(--${tone}) / 0.15)` }}
+          >
+            {isBackoff ? "💥" : "↻"}
+          </span>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: `hsl(var(--${tone}))` }}>
+              {isBackoff
+                ? "A worker failed while processing"
+                : `Rerunning on a healthy worker — attempt ${attempt}`}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {isBackoff
+                ? failure
+                  ? short(failure)
+                  : "The step crashed mid-work."
+                : "The ingested data is safe in history — it is not being recomputed."}
+            </p>
+          </div>
+        </div>
+        {isBackoff && (
+          <div className="text-right">
+            <div className="font-mono text-2xl font-semibold tabular-nums text-danger">
+              {remaining.toFixed(1)}s
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              retry in
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full transition-all duration-150"
+          style={{ width: `${pct}%`, backgroundColor: `hsl(var(--${tone}))` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+type NodeState = "pending" | "active" | "crashed" | "done";
+
+function Stage({
+  phase,
+  attempt,
+  live,
+  elapsed,
+}: {
+  phase: Phase;
+  attempt: number;
+  live: RunLive | null;
+  elapsed: number;
+}) {
+  const ingest: NodeState =
+    phase === "idle" ? "pending" : phase === "ingesting" ? "active" : "done";
+  const process: NodeState =
+    phase === "idle" || phase === "ingesting"
+      ? "pending"
+      : phase === "rescheduling"
         ? "crashed"
-        : phase === "training" || phase === "recovering"
+        : phase === "processing" || phase === "recovering"
           ? "active"
-          : "pending";
+          : "done";
+  const exportState: NodeState =
+    phase === "completed" ? "done" : phase === "exporting" ? "active" : "pending";
+
+  const cap = (s: number) => Math.min(0.95, Math.max(0, s));
+  const ingestPct = ingest === "done" ? 1 : ingest === "active" ? cap(elapsed / DUR.ingest) : 0;
+  const processPct =
+    process === "done"
+      ? 1
+      : process === "crashed"
+        ? 0.66
+        : process === "active"
+          ? cap(elapsed / DUR.process)
+          : 0;
+  const exportPct = exportState === "done" ? 1 : exportState === "active" ? cap(elapsed / DUR.export) : 0;
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card/50 p-5">
       <div className="grid items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr_auto_1fr]">
+        <StageNode label="Ingest dataset" sub="5 GB" state={ingest} tone="flow" progress={ingestPct} />
+        <Connector done={ingest === "done"} />
         <StageNode
-          label="Download dataset"
-          sub="5 GB"
-          state={downloadDone ? "done" : phase === "downloading" ? "active" : "pending"}
-          tone="flow"
-        />
-        <Connector done={downloadDone} />
-        <StageNode
-          label="Train model (GPU)"
+          label="Process records"
           sub={attempt > 1 ? `attempt ${attempt}` : "attempt 1"}
-          state={trainState}
-          tone={trainState === "crashed" ? "danger" : "flow"}
+          state={process}
+          tone={process === "crashed" ? "danger" : "flow"}
+          progress={processPct}
         />
-        <Connector done={phase === "completed"} />
+        <Connector done={process === "done"} />
         <StageNode
-          label="Finish"
+          label="Export results"
           sub="exactly once"
-          state={phase === "completed" ? "done" : "pending"}
+          state={exportState}
           tone="success"
+          progress={exportPct}
         />
       </div>
       {live?.status_note && (
@@ -318,11 +487,13 @@ function StageNode({
   sub,
   state,
   tone,
+  progress,
 }: {
   label: string;
   sub: string;
-  state: "pending" | "active" | "crashed" | "done";
+  state: NodeState;
   tone: "flow" | "danger" | "success";
+  progress: number;
 }) {
   const color =
     state === "crashed"
@@ -346,19 +517,27 @@ function StageNode({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold">{label}</span>
         <span
-          className={`h-2 w-2 rounded-full ${active ? "animate-pulse" : ""}`}
+          className={`h-2 w-2 rounded-full ${active && state !== "crashed" ? "animate-pulse" : ""}`}
           style={{ backgroundColor: `hsl(${color})` }}
         />
       </div>
       <div className="mt-1 font-mono text-[11px]" style={{ color: `hsl(${color})` }}>
         {state === "crashed"
-          ? "✕ worker died"
+          ? "✕ worker failed"
           : state === "done"
             ? "✓ done"
             : state === "active"
               ? "● working"
               : sub}
       </div>
+      {state !== "pending" && (
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full transition-all duration-200"
+            style={{ width: `${progress * 100}%`, backgroundColor: `hsl(${color})` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -414,23 +593,27 @@ function SidePanel({
   attempt: number;
   workers: Set<string>;
 }) {
-  const act = trainingActivity(live);
+  const act = processActivity(live);
   return (
     <div className="space-y-3 rounded-xl border bg-card p-4">
       <h3 className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
         Real Temporal state
       </h3>
       <Metric label="Run status" value={run.status} />
-      <Metric label="Training attempt" value={String(attempt)} highlight={attempt > 1} />
+      <Metric label="Process attempt" value={String(attempt)} highlight={attempt > 1} />
       <Metric
         label="Activity state"
         value={act ? act.state : run.status === "Completed" ? "—" : "scheduling…"}
       />
-      <Metric label="Worker instances seen" value={String(Math.max(workers.size, 1))} highlight={workers.size > 1} />
       {act?.last_failure && (
         <div className="rounded-md border border-danger/30 bg-danger/5 p-2">
           <div className="font-mono text-[10px] uppercase text-danger">Last failure</div>
           <div className="mt-0.5 break-words text-xs text-muted-foreground">{act.last_failure}</div>
+        </div>
+      )}
+      {workers.size > 0 && (
+        <div className="text-[11px] text-muted-foreground">
+          worker: <span className="font-mono">{[...workers].join(", ")}</span>
         </div>
       )}
     </div>
@@ -458,11 +641,11 @@ function SuccessResult({ run, attempt }: { run: Run; attempt: number }) {
         Recovery successful
       </p>
       <p className="mt-2 text-lg font-medium">
-        A worker died mid-run{attempt > 1 ? ` (recovered on attempt ${attempt})` : ""} — and the
-        workflow still finished, exactly once.
+        A worker failed mid-run{attempt > 1 ? ` (recovered on attempt ${attempt})` : ""} — and the
+        pipeline still finished, exactly once.
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
-        The download step ran before the crash; its result was replayed from history rather than
+        The ingest step ran before the failure; its result was replayed from history rather than
         recomputed. No lost state, no duplicated work.
       </p>
       <pre className="mt-3 overflow-x-auto rounded-md bg-background/60 p-3 text-[11px] text-muted-foreground">
@@ -476,8 +659,8 @@ function IdleHint() {
   return (
     <div className="rounded-xl border border-dashed bg-card/40 p-8 text-center">
       <p className="text-sm text-muted-foreground">
-        Press <span className="font-medium text-danger">Run the crash</span> to start a real durable
-        workflow and watch a worker die and recover — live.
+        Press <span className="font-medium text-danger">Run the pipeline</span> to start a real
+        durable workflow and watch a worker fail and recover — live.
       </p>
     </div>
   );

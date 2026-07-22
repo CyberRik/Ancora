@@ -11,8 +11,14 @@ export default function WorkflowsPage() {
     const c = new AbortController();
     api
       .listWorkflows(c.signal)
-      .then(setDefs)
-      .catch((e) => setError(e instanceof Error ? e.message : "failed to load"));
+      .then((res) => {
+        setDefs(res);
+        setError(null);
+      })
+      .catch((e) => {
+        if (e.name === "AbortError" || (e instanceof Error && e.message.includes("aborted"))) return;
+        setError(e instanceof Error ? e.message : "failed to load");
+      });
     return () => c.abort();
   }, []);
 

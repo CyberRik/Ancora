@@ -191,7 +191,7 @@ class WorkflowService:
             if run is None:
                 raise NotFoundError(f"run '{run_id}' not found")
             handle = self.client.get_workflow_handle(run.temporal_wf_id, run_id=run.temporal_run_id)
-            await handle.cancel()
+            await handle.terminate("Cancelled via API")
             await self._refresh(run)
             return _to_out(run)
 

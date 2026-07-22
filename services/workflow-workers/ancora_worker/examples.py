@@ -8,7 +8,6 @@ happens in the ``greet`` activity.
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -212,58 +211,102 @@ class DemoInput(BaseModel):
     message: str
 
 
-@activity.defn(name="download_large_dataset")
-async def download_large_dataset(inp: DemoInput) -> dict[str, Any]:
-    """Simulates a long-running download."""
-    await asyncio.sleep(3)
-    return {"status": "downloaded", "dataset_size": "5GB"}
+# Deliberate, human-watchable pacing so the failure and recovery are perceivable
+# in the UI rather than flashing past. See the demo page for the matching timings.
+_INGEST_SECONDS = 3.0
+_PROCESS_WORK_SECONDS = 2.0  # how long attempt 1 "works" before it crashes
+_PROCESS_SECONDS = 3.0
+_EXPORT_SECONDS = 2.0
+_RETRY_BACKOFF_SECONDS = 5.0  # visible "worker down, rescheduling" window
 
 
-@activity.defn(name="flaky_gpu_training")
-async def flaky_gpu_training(inp: dict[str, Any]) -> dict[str, Any]:
-    """Crashes the worker process on the first attempt, succeeds on the second."""
+@activity.defn(name="ingest_dataset")
+async def ingest_dataset(inp: DemoInput) -> dict[str, Any]:
+    """Step 1 — pull in a large dataset. The expensive step we must never redo."""
+    await asyncio.sleep(_INGEST_SECONDS)
+    return {"status": "ingested", "records": 1_000_000, "size": "5 GB"}
+
+
+@activity.defn(name="process_records")
+async def process_records(inp: dict[str, Any]) -> dict[str, Any]:
+    """Step 2 — process the records, but *fail the first attempt*.
+
+    Attempt 1 does ~2s of "work" and then crashes, so the UI can show real progress
+    being lost to a mid-job failure (an OOM kill / eviction) with a retryable error.
+    Temporal then waits a visible backoff and retries; the finished ingest step is
+    replayed from history, not recomputed — exactly-once progress, no lost work.
+    (We raise instead of killing the process so the worker survives to serve the
+    retry — a hard crash would need Docker to restart the whole container.)
+    """
     info = temporal_activity.info()
     if info.attempt == 1:
-        # Simulate a fatal GPU OOM or pod eviction by killing the process
-        print("💥 FATAL: Simulating worker crash during GPU training! (attempt 1)", flush=True)
-        os._exit(1)
-    
-    # On attempt > 1, it will succeed
-    await asyncio.sleep(2)
-    return {"status": "trained", "accuracy": 0.95, "recovered_on_attempt": info.attempt}
+        await asyncio.sleep(_PROCESS_WORK_SECONDS)  # looks like it's working…
+        print("💥 Simulating a worker failure while processing records (attempt 1)", flush=True)
+        raise RuntimeError("Worker failure: out-of-memory while processing records")
+    await asyncio.sleep(_PROCESS_SECONDS)
+    return {
+        "status": "processed",
+        "records": int(inp.get("records", 0)),
+        "recovered_on_attempt": info.attempt,
+    }
+
+
+@activity.defn(name="export_results")
+async def export_results(inp: dict[str, Any]) -> dict[str, Any]:
+    """Step 3 — export the processed results."""
+    await asyncio.sleep(_EXPORT_SECONDS)
+    return {"status": "exported", "location": "s3://ancora-demo/results.parquet"}
 
 
 @workflow.defn(name="durability_demo")
 class DurabilityDemoWorkflow(Workflow):
-    """Demonstrates exactly-once execution despite worker death."""
+    """A 3-step data pipeline that survives a mid-run worker failure.
+
+    ingest → process (fails once) → export. When the process step fails, Temporal
+    retries it while the already-finished ingest step is replayed from history —
+    exactly-once progress, no lost work, no restart needed.
+    """
 
     def __init__(self) -> None:
-        self._status = "Initializing..."
+        self._status = "Starting..."
 
     @workflow.run
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
-        self._status = "Downloading dataset..."
-        dl = await self.call(download_large_dataset, DemoInput(message="start"))
-        
-        self._status = "Training model (Watch terminal - worker will crash!)..."
-        retry = RetryPolicy(initial_interval=timedelta(seconds=2))
+        self._status = "Ingesting dataset..."
+        ingest = await self.call(
+            ingest_dataset,
+            DemoInput(message="start"),
+            start_to_close_timeout=timedelta(seconds=30),
+        )
 
-        # heartbeat_timeout lets Temporal notice the worker *died* within a few
-        # seconds (no heartbeat) and retry — otherwise it would wait out the whole
-        # start_to_close_timeout. Keeps the crash→recovery snappy for the demo.
-        train = await self.call(
-            flaky_gpu_training,
-            dl,
+        self._status = "Processing records (a worker will fail here)..."
+        # Flat, visible backoff so the "worker down — rescheduling" window is
+        # long enough to see (backoff_coefficient=1.0 keeps it a predictable 5s).
+        retry = RetryPolicy(
+            initial_interval=timedelta(seconds=_RETRY_BACKOFF_SECONDS),
+            backoff_coefficient=1.0,
+            maximum_attempts=5,
+        )
+        process = await self.call(
+            process_records,
+            ingest,
             retry=retry,
             start_to_close_timeout=timedelta(seconds=30),
-            heartbeat_timeout=timedelta(seconds=4),
         )
-        
-        self._status = "Completed successfully!"
+
+        self._status = "Exporting results..."
+        export = await self.call(
+            export_results,
+            process,
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        self._status = "Completed"
         return {
-            "download": dl,
-            "training": train,
-            "message": "Workflow completed despite process crash!"
+            "ingest": ingest,
+            "process": process,
+            "export": export,
+            "message": "Pipeline finished despite a mid-run worker failure.",
         }
 
     @workflow.query
@@ -279,7 +322,12 @@ WORKFLOWS: list[type] = [
     ResearchAgentWorkflow,
     DurabilityDemoWorkflow,
 ]
-ACTIVITIES: list[Callable[..., Any]] = [greet, download_large_dataset, flaky_gpu_training]
+ACTIVITIES: list[Callable[..., Any]] = [
+    greet,
+    ingest_dataset,
+    process_records,
+    export_results,
+]
 WORKFLOW_NAMES: dict[type, str] = {
     HelloWorkflow: "hello",
     GatedWorkflow: "gated",
