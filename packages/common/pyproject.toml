@@ -12,6 +12,7 @@ dependencies = [
     "asyncpg>=0.30",
     "temporalio>=1.9,<2",
     "python-json-logger>=3.2",
+    "redis>=5.2",
 ]
 
 [build-system]

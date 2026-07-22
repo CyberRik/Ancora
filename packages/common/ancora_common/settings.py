@@ -24,5 +24,13 @@ class CommonSettings(BaseSettings):
     temporal_namespace: str = "default"
 
     # Phase 1 uses a single task queue. Phase 2 introduces per-capability queues
-    # (gpu/cpu/io); this stays the default/CPU queue.
+    # (gpu/cpu/io); this stays the default/orchestration queue.
     task_queue: str = "ancora-default"
+
+    # Redis backs worker-liveness TTLs and (later) rate-limit token buckets.
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Ray cluster address. "auto"/"local" (or empty) start/attach a local Ray;
+    # "ray://host:10001" attaches to a running head. Empty falls back to the
+    # in-process LocalBackend so activities run without a cluster.
+    ray_address: str = ""

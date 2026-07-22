@@ -1,0 +1,29 @@
+[project]
+name = "ancora-activity-worker"
+version = "0.1.0"
+description = "Ancora activity worker — dispatches activities to Ray (inline + async completion)."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "temporalio>=1.9,<2",
+    "pydantic>=2.6",
+    "ancora",
+    "ancora-common",
+]
+
+# Ray is an *optional* extra: the worker runs on an in-process LocalBackend when
+# Ray is absent (dev/CI), and on a real cluster when installed + configured.
+# Installing Ray is heavy, so the dev venv and unit tests deliberately skip it.
+[project.optional-dependencies]
+ray = ["ray[default]>=2.9"]
+
+[project.scripts]
+ancora-activity-worker = "ancora_activity_worker.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ancora_activity_worker"]

@@ -162,3 +162,55 @@ class WorkflowRun(Base):
     created_at: Mapped[datetime] = _created_at()
 
     workflow_version: Mapped[WorkflowVersion] = relationship(back_populates="runs")
+
+
+# --------------------------------------------------------------------------- #
+# Execution runtime (Phase 2)
+# --------------------------------------------------------------------------- #
+class Worker(Base):
+    """An activity worker's registration (AN-032).
+
+    Rows are authoritative for *capabilities* (which pools/queues a worker serves)
+    and *identity*; live health is a Redis TTL keyed by ``worker_id`` (a row can
+    exist while the worker is dead — the registry marks it stale on read).
+    """
+
+    __tablename__ = "worker"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    worker_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Capability pools (["cpu","gpu"]) and the queues derived from them.
+    pools: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    task_queues: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    # Advertised resources: total_cpus/total_gpus/accelerator_type.
+    resources: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    registered_at: Mapped[datetime] = _created_at()
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class NodeExecution(Base):
+    """Crude projection of a single activity/node dispatch (AN-028 support).
+
+    Records where a node ran (backend + Ray task id) and its lifecycle. Like
+    ``workflow_run`` this is a derived view; the event-sourced version arrives in
+    Phase 4. Kept intentionally thin.
+    """
+
+    __tablename__ = "node_execution"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    temporal_wf_id: Mapped[str] = mapped_column(Text, nullable=False)
+    node_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    capability: Mapped[str] = mapped_column(String(32), nullable=False)
+    backend: Mapped[str] = mapped_column(String(32), nullable=False)  # "ray" | "local"
+    ray_task_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _created_at()
