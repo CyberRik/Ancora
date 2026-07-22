@@ -224,14 +224,19 @@ _RETRY_BACKOFF_SECONDS = 5.0  # visible "worker down, rescheduling" window
 async def ingest_dataset(inp: DemoInput) -> dict[str, Any]:
     """Step 1 — pull in a real dataset. The expensive step we must never redo."""
     import httpx
-    
+
     async with httpx.AsyncClient() as client:
         resp = await client.get("https://dummyjson.com/posts?limit=150")
         resp.raise_for_status()
         data = resp.json()
-        
+
     posts = data.get("posts", [])
-    return {"status": "ingested", "records": len(posts), "data": posts, "size": f"{len(resp.content)} bytes"}
+    return {
+        "status": "ingested",
+        "records": len(posts),
+        "data": posts,
+        "size": f"{len(resp.content)} bytes",
+    }
 
 
 @activity.defn(name="process_records")
@@ -244,9 +249,10 @@ async def process_records(inp: dict[str, Any]) -> dict[str, Any]:
     replayed from history, not recomputed — exactly-once progress, no lost work.
     """
     import hashlib
+
     info = temporal_activity.info()
     posts = inp.get("data", [])
-    
+
     def do_work() -> int:
         total_words = 0
         for post in posts:
@@ -261,9 +267,9 @@ async def process_records(inp: dict[str, Any]) -> dict[str, Any]:
         await asyncio.to_thread(do_work)  # Do some real work to take time
         print("💥 Simulating a worker failure while processing records (attempt 1)", flush=True)
         raise RuntimeError("Worker failure: out-of-memory while processing records")
-        
+
     total_words = await asyncio.to_thread(do_work)
-    
+
     return {
         "status": "processed",
         "records": len(posts),

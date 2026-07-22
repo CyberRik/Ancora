@@ -1,11 +1,11 @@
-import json
-import os
 import logging
+import os
 
 from ancora.nodes.base import NodeError
 from ancora.nodes.llm import LLMProvider, LLMRequest, LLMResponse, _tokens
 
 logger = logging.getLogger("ancora.nodes.gemini")
+
 
 class GeminiProvider(LLMProvider):
     """Real LLM provider using Google Gemini's API."""
@@ -19,7 +19,7 @@ class GeminiProvider(LLMProvider):
 
     async def complete(self, req: LLMRequest) -> LLMResponse:
         import httpx
-        
+
         if not self.api_key:
             raise NodeError("GEMINI_API_KEY is missing", transient=False)
 
@@ -27,36 +27,40 @@ class GeminiProvider(LLMProvider):
         model = req.model
         if "mock" in model.lower():
             model = "gemini-3.5-flash-lite"
-            
+
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
         headers = {
             "Content-Type": "application/json",
         }
-        
+
         contents = []
         for m in req.messages:
             role = "user" if m.role == "user" else "model"
-            # system messages are technically handled differently in newer Gemini API (systemInstruction), 
+            # system messages are technically handled differently in newer Gemini API (systemInstruction),
             # but mapping to "user" or "model" works for basic chat for now if we prepend it or just send it as user.
             if m.role == "system":
                 # For simplicity, we just treat system as user prompt to avoid Gemini systemInstruction strictness
-                contents.append({"role": "user", "parts": [{"text": "System Instructions: " + m.content}]})
+                contents.append(
+                    {"role": "user", "parts": [{"text": "System Instructions: " + m.content}]}
+                )
             else:
                 contents.append({"role": role, "parts": [{"text": m.content}]})
-                
+
         payload = {
             "contents": contents,
             "generationConfig": {
                 "temperature": req.temperature,
                 "maxOutputTokens": req.max_tokens,
-            }
+            },
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 resp = await client.post(url, headers=headers, json=payload)
             except httpx.RequestError as exc:
-                raise NodeError(f"Gemini network error: {exc}", transient=True, retry_after=5.0) from exc
+                raise NodeError(
+                    f"Gemini network error: {exc}", transient=True, retry_after=5.0
+                ) from exc
 
         if resp.status_code == 429 or resp.status_code >= 500:
             raise NodeError(
@@ -78,7 +82,7 @@ class GeminiProvider(LLMProvider):
             text = candidates[0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError) as e:
             raise NodeError(f"Unexpected Gemini response structure: {data}", transient=False) from e
-        
+
         usage = data.get("usageMetadata", {})
         it = usage.get("promptTokenCount", sum(_tokens(m.content) for m in req.messages))
         ot = usage.get("candidatesTokenCount", _tokens(text))

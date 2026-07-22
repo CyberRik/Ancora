@@ -53,6 +53,7 @@ def _node_runtime() -> Any:
     clear_providers()
     register_provider(MockProvider("mock"))
     register_provider(MockProvider("mock-secondary"))
+    register_provider(MockProvider("gemini"))
     yield
     runtime.reset()
     clear_providers()
