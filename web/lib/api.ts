@@ -78,6 +78,23 @@ export interface Queue {
   backlog: number;
 }
 
+export interface RunActivity {
+  activity_id: string;
+  activity_type: string;
+  state: string;
+  attempt: number;
+  maximum_attempts: number;
+  last_failure: string | null;
+  last_worker_identity: string | null;
+}
+
+export interface RunLive {
+  run_id: string;
+  status: RunStatus;
+  status_note: string | null;
+  activities: RunActivity[];
+}
+
 async function req<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
@@ -115,6 +132,8 @@ export const api = {
     req<Run[]>("/v1/runs", { signal }),
   getRun: (id: string, signal?: AbortSignal) =>
     req<Run>(`/v1/runs/${id}`, { signal }),
+  getRunActivities: (id: string, signal?: AbortSignal) =>
+    req<RunLive>(`/v1/runs/${id}/activities`, { signal }),
   startRun: (name: string, input: Record<string, unknown>) =>
     req<StartRunResponse>(`/v1/workflows/${name}/runs`, {
       method: "POST",

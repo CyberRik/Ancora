@@ -209,6 +209,7 @@ dependencies = [
     { name = "ancora-common" },
     { name = "pydantic" },
     { name = "temporalio" },
+    { name = "watchfiles" },
 ]
 
 [package.optional-dependencies]
@@ -223,6 +224,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.6" },
     { name = "ray", extras = ["default"], marker = "extra == 'ray'", specifier = ">=2.9" },
     { name = "temporalio", specifier = ">=1.9,<2" },
+    { name = "watchfiles", specifier = ">=0.24" },
 ]
 provides-extras = ["ray"]
 
@@ -337,6 +339,7 @@ dependencies = [
     { name = "ancora-common" },
     { name = "pydantic" },
     { name = "temporalio" },
+    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -345,6 +348,7 @@ requires-dist = [
     { name = "ancora-common", editable = "packages/common" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "temporalio", specifier = ">=1.9,<2" },
+    { name = "watchfiles", specifier = ">=0.24" },
 ]
 
 [[package]]

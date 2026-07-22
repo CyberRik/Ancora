@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from temporalio import activity, workflow
 
-from ancora.base import Workflow
+from ancora.base import ApprovalDecision, Workflow
 from ancora.version import __version__
 
-__all__ = ["__version__", "Workflow", "workflow", "activity"]
+__all__ = ["__version__", "Workflow", "ApprovalDecision", "workflow", "activity"]

@@ -10,6 +10,8 @@ dependencies = [
     "pydantic>=2.6",
     "ancora",
     "ancora-common",
+    # Dev hot-reload wrapper for the local Docker stack (see docker-compose.yml).
+    "watchfiles>=0.24",
 ]
 
 # Ray is an *optional* extra: the worker runs on an in-process LocalBackend when

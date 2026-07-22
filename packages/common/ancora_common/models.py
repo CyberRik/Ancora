@@ -192,6 +192,29 @@ class Worker(Base):
     )
 
 
+class Inbox(Base):
+    """Idempotency inbox (AN-061): the exactly-once side-effect guard.
+
+    A side-effecting node writes a row keyed by its ``idempotency_key`` before
+    acting and stores the result after. On a retry or replay the guard finds the
+    row and returns the stored result instead of re-issuing the effect — so a
+    double-fired HTTP POST produces one request, not two. ``key`` is derived
+    deterministically in the SDK (AN-062) from ``(workflow_id, node_id, input)``.
+    """
+
+    __tablename__ = "inbox"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    temporal_wf_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    node_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # "pending" while the effect is in flight; "done" once the result is stored.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = _created_at()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class NodeExecution(Base):
     """Crude projection of a single activity/node dispatch (AN-028 support).
 

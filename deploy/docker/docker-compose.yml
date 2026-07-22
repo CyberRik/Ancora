@@ -96,8 +96,23 @@ services:
       - ANCORA_TASK_QUEUE=ancora-default
       - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_CORS_ORIGINS=["http://localhost:3000"]
+      # Poll for changes: Docker Desktop bind mounts don't deliver inotify events.
+      - WATCHFILES_FORCE_POLLING=true
     ports:
       - "8080:8080"
+    volumes:
+      - ../../services/api-gateway:/app/services/api-gateway
+      - ../../packages/sdk-python:/app/packages/sdk-python
+      - ../../packages/common:/app/packages/common
+    # Hot reload: watch the service *and* the shared packages so edits to
+    # ancora_common / the SDK also restart the server.
+    command: [
+      "uvicorn", "ancora_api.main:app", "--host", "0.0.0.0", "--port", "8080",
+      "--reload",
+      "--reload-dir", "/app/services/api-gateway",
+      "--reload-dir", "/app/packages/common",
+      "--reload-dir", "/app/packages/sdk-python",
+    ]
 
   worker:
     build:
@@ -113,6 +128,16 @@ services:
       - ANCORA_TEMPORAL_ADDRESS=temporal:7233
       - ANCORA_TEMPORAL_NAMESPACE=default
       - ANCORA_TASK_QUEUE=ancora-default
+      - WATCHFILES_FORCE_POLLING=true
+    volumes:
+      - ../../services/workflow-workers:/app/services/workflow-workers
+      - ../../packages/sdk-python:/app/packages/sdk-python
+      - ../../packages/common:/app/packages/common
+    # Hot reload: restart the worker whenever workflow/activity or shared code changes.
+    command: [
+      "watchfiles", "--filter", "python", "ancora-worker",
+      "/app/services/workflow-workers", "/app/packages",
+    ]
     restart: on-failure
 
   # Activity worker (execution runtime). Defaults to the in-process LocalBackend;
@@ -135,7 +160,17 @@ services:
       - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_POOLS=["cpu","io"]
       - ANCORA_TOTAL_CPUS=4
+      - WATCHFILES_FORCE_POLLING=true
       # - ANCORA_RAY_ADDRESS=ray://ray-head:10001   # enable with --profile ray
+    volumes:
+      - ../../services/activity-workers:/app/services/activity-workers
+      - ../../packages/sdk-python:/app/packages/sdk-python
+      - ../../packages/common:/app/packages/common
+    # Hot reload: restart the activity worker when node/runtime or shared code changes.
+    command: [
+      "watchfiles", "--filter", "python", "ancora-activity-worker",
+      "/app/services/activity-workers", "/app/packages",
+    ]
     restart: on-failure
 
   # Optional Ray head (AN-025). Off by default to keep `make up` light and
@@ -155,12 +190,23 @@ services:
     build:
       context: ../..
       dockerfile: web/Dockerfile
+      # Build only the deps stage (node_modules + pnpm); run `next dev` against the
+      # mounted source so edits hot-reload via Fast Refresh instead of needing a
+      # rebuild. For a production image, drop `target` (defaults to the runner stage).
+      target: deps
     depends_on:
       - api
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_TELEMETRY_DISABLED=1
+      - WATCHPACK_POLLING=true
     ports:
       - "3000:3000"
+    volumes:
+      - ../../web:/app
+      - /app/node_modules
+      - /app/.next
+    command: ["pnpm", "dev"]
 
 volumes:
   pgdata:

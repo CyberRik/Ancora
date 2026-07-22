@@ -75,9 +75,29 @@ def get_node_recorder() -> NodeRecorder:
     return _recorder
 
 
+# The idempotency inbox guard used by the ``run_node`` activity (AN-061). Defaults
+# to Postgres in production; tests inject an in-memory guard.
+_inbox: Any | None = None
+
+
+def set_inbox(inbox: Any) -> None:
+    global _inbox
+    _inbox = inbox
+
+
+def get_inbox() -> Any:
+    global _inbox
+    if _inbox is None:
+        from ancora_common.inbox import PostgresInboxGuard
+
+        _inbox = PostgresInboxGuard()
+    return _inbox
+
+
 def reset() -> None:
     """Tear down process globals (used between tests)."""
-    global _backend, _completion_client, _recorder
+    global _backend, _completion_client, _recorder, _inbox
     _backend = None
     _completion_client = None
     _recorder = _NoopRecorder()
+    _inbox = None

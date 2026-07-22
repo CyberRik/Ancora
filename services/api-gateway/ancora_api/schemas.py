@@ -82,3 +82,30 @@ class QueueOut(BaseModel):
     live_worker_count: int
     # Pending demand; wired to the scheduler's watermark in Phase 3 (0 for now).
     backlog: int
+
+
+# --------------------------------------------------------------------------- #
+# Live activity state (real Temporal state for the durability demo)
+# --------------------------------------------------------------------------- #
+class RunActivityOut(BaseModel):
+    """A pending activity as Temporal sees it right now — the real attempt/failure.
+
+    ``attempt`` incrementing (and ``last_failure`` appearing) is the ground-truth
+    signal that a worker died and the step is being retried — no simulation.
+    """
+
+    activity_id: str
+    activity_type: str
+    state: str  # Scheduled | Started | CancelRequested
+    attempt: int
+    maximum_attempts: int
+    last_failure: str | None = None
+    last_worker_identity: str | None = None
+
+
+class RunLiveOut(BaseModel):
+    run_id: uuid.UUID
+    status: str
+    # Optional workflow-reported progress note (``current_status`` query, if any).
+    status_note: str | None = None
+    activities: list[RunActivityOut] = Field(default_factory=list)

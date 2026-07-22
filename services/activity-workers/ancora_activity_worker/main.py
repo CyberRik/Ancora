@@ -13,11 +13,14 @@ import asyncio
 import contextlib
 import logging
 import signal
+from collections.abc import Callable
+from typing import Any
 
 from temporalio.worker import Worker
 
 from ancora_activity_worker import runtime
 from ancora_activity_worker.activities import ACTIVITIES
+from ancora_activity_worker.nodes_runtime import run_node
 from ancora_activity_worker.ray_bridge import connect_backend
 from ancora_activity_worker.recorder import DbNodeRecorder
 from ancora_activity_worker.registration import WorkerRegistration
@@ -44,12 +47,14 @@ async def _run() -> None:
     if registration is not None:
         await registration.start()
 
+    # Node execution (run_node) rides the same workers as the Ray dispatch activities.
+    all_activities: list[Callable[..., Any]] = [*ACTIVITIES, run_node]
     queues = [queue_for(p) for p in settings.pools]
     workers = [
         Worker(
             client,
             task_queue=q,
-            activities=ACTIVITIES,
+            activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities,
         )
         for q in queues

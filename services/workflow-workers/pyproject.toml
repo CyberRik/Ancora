@@ -10,6 +10,9 @@ dependencies = [
     "pydantic>=2.6",
     "ancora",
     "ancora-common",
+    # Enables the dev hot-reload wrapper (`watchfiles ancora-worker ...`) used by
+    # the local Docker stack; tiny Rust-backed watcher, safe to ship.
+    "watchfiles>=0.24",
 ]
 
 [project.scripts]

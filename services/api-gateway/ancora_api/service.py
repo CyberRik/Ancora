@@ -17,7 +17,13 @@ from sqlalchemy.orm import selectinload
 from temporalio.client import Client, WorkflowFailureError
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
-from ancora_api.schemas import RunOut, StartRunRequest, WorkflowDefOut
+from ancora_api.schemas import (
+    RunActivityOut,
+    RunLiveOut,
+    RunOut,
+    StartRunRequest,
+    WorkflowDefOut,
+)
 from ancora_common import DEFAULT_PROJECT_ID
 from ancora_common.catalog import (
     AncoraRunStatus,
@@ -34,6 +40,10 @@ from ancora_common.models import WorkflowRun, WorkflowVersion
 
 class NotFoundError(Exception):
     """Raised when a requested workflow/run does not exist."""
+
+
+# Temporal ``PendingActivityState`` enum values → readable labels.
+_PENDING_ACTIVITY_STATE: dict[int, str] = {1: "Scheduled", 2: "Started", 3: "CancelRequested"}
 
 
 def _utcnow() -> datetime:
@@ -200,6 +210,54 @@ class WorkflowService:
             await handle.signal(name) if arg is None else await handle.signal(name, arg)
             await self._refresh(run)
             return _to_out(run)
+
+    async def get_run_live(self, run_id: uuid.UUID) -> RunLiveOut:
+        """Real-time activity state for a run, straight from Temporal (demo money-shot).
+
+        Reads ``describe()``'s pending activities so the UI can show the *actual*
+        attempt counter ticking (1 → 2 when a worker dies and the step is retried)
+        and the real failure — not a simulated animation.
+        """
+        async with session_scope() as session:
+            run = await _load_run(session, run_id)
+            if run is None:
+                raise NotFoundError(f"run '{run_id}' not found")
+            if run.status not in AncoraRunStatus.TERMINAL:
+                await self._refresh(run)
+            status = run.status
+            wf_id = run.temporal_wf_id
+            temporal_run_id = run.temporal_run_id
+
+        handle = self.client.get_workflow_handle(wf_id, run_id=temporal_run_id)
+        activities: list[RunActivityOut] = []
+        try:
+            desc = await handle.describe()
+            for pa in desc.raw_description.pending_activities:
+                last_failure = pa.last_failure.message if pa.HasField("last_failure") else None
+                activities.append(
+                    RunActivityOut(
+                        activity_id=pa.activity_id,
+                        activity_type=pa.activity_type.name,
+                        state=_PENDING_ACTIVITY_STATE.get(int(pa.state), "Unknown"),
+                        attempt=int(pa.attempt),
+                        maximum_attempts=int(pa.maximum_attempts),
+                        last_failure=last_failure or None,
+                        last_worker_identity=pa.last_worker_identity or None,
+                    )
+                )
+        except Exception:  # noqa: BLE001 — best-effort live view; never 500 the demo
+            pass
+
+        status_note: str | None = None
+        if status not in AncoraRunStatus.TERMINAL:
+            try:
+                status_note = await handle.query("current_status")
+            except Exception:  # noqa: BLE001 — workflow may not expose the query
+                status_note = None
+
+        return RunLiveOut(
+            run_id=run_id, status=status, status_note=status_note, activities=activities
+        )
 
     # ---- internal: crude status projection ------------------------------ #
     async def _refresh(self, run: WorkflowRun) -> None:

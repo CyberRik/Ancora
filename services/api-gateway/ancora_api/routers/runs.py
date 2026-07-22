@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, Depends, Header, Query, status
 from ancora_api.deps import get_service
 from ancora_api.schemas import (
     RunLinks,
+    RunLiveOut,
     RunOut,
     StartRunRequest,
     StartRunResponse,
@@ -56,6 +57,15 @@ async def get_run(
     service: WorkflowService = Depends(get_service),
 ) -> RunOut:
     return await service.get_run(run_id)
+
+
+@router.get("/runs/{run_id}/activities", response_model=RunLiveOut)
+async def get_run_activities(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+) -> RunLiveOut:
+    """Live per-activity state (real attempt counter + failure) for the demo view."""
+    return await service.get_run_live(run_id)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)

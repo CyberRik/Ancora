@@ -9,12 +9,14 @@ import {
   LayoutDashboard,
   Play,
   ServerCog,
+  ShieldAlert,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/demo", label: "Durability Demo", icon: ShieldAlert },
   { href: "/workflows", label: "Workflows", icon: GitBranch },
   { href: "/runs", label: "Runs", icon: Play },
   { href: "/workers", label: "Workers", icon: ServerCog },
