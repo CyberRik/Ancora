@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, type HealthStatus, type VersionInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Alert, Card, PageHeader, Skeleton } from "@/components/ui";
 
 type State =
   | { kind: "loading" }
@@ -32,70 +33,73 @@ export default function HealthPage() {
   }, []);
 
   return (
-    <div className="max-w-xl space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">API Health</h2>
-        <p className="text-sm text-muted-foreground">
-          Live check against the control-plane API.
-        </p>
-      </div>
+    <div className="max-w-2xl space-y-6">
+      <PageHeader
+        eyebrow="Control plane"
+        title="Health"
+        description="A live check against the API and its dependencies. If the dashboard looks frozen, this is the first place to look."
+      />
 
       {state.kind === "loading" && (
-        <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-          Checking…
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="flex items-center justify-between p-4">
+              <Skeleton className="h-3.5 w-24" />
+              <Skeleton className="h-3.5 w-16" />
+            </Card>
+          ))}
         </div>
       )}
 
       {state.kind === "error" && (
-        <div className="rounded-lg border border-danger/40 bg-card p-4 text-sm">
-          <div className="font-medium text-danger">API unreachable</div>
-          <div className="mt-1 text-muted-foreground">
-            {state.message}. Is the API running on{" "}
-            <code>{process.env.NEXT_PUBLIC_API_URL}</code>?
-          </div>
-        </div>
+        <Alert title="API unreachable">
+          {state.message}. Confirm the control plane is listening on{" "}
+          <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">
+            {process.env.NEXT_PUBLIC_API_URL}
+          </code>
+          , then reload.
+        </Alert>
       )}
 
       {state.kind === "ok" && (
-        <div className="space-y-3">
-          <StatusRow label="Overall" value={state.health.status} ok />
-          {Object.entries(state.health.checks).map(([k, v]) => (
-            <StatusRow key={k} label={k} value={v} ok={v === "ok"} />
-          ))}
-          <div className="rounded-lg border bg-card p-4 text-sm">
-            <div className="text-muted-foreground">Version</div>
-            <div className="mt-1 font-mono">
-              {state.version.service} {state.version.version} ·{" "}
-              {state.version.environment}
-            </div>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <StatusRow label="Overall" value={state.health.status} ok />
+            {Object.entries(state.health.checks).map(([k, v]) => (
+              <StatusRow key={k} label={k} value={v} ok={v === "ok"} />
+            ))}
           </div>
+
+          <Card className="p-4">
+            <div className="eyebrow">Build</div>
+            <div className="mt-2 font-mono text-sm">
+              {state.version.service}{" "}
+              <span className="text-flow">{state.version.version}</span>
+              <span className="text-muted-foreground"> · {state.version.environment}</span>
+            </div>
+          </Card>
         </div>
       )}
     </div>
   );
 }
 
-function StatusRow({
-  label,
-  value,
-  ok,
-}: {
-  label: string;
-  value: string;
-  ok: boolean;
-}) {
+function StatusRow({ label, value, ok }: { label: string; value: string; ok: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border bg-card p-4">
+    <Card className="flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-sm capitalize text-muted-foreground">{label}</span>
-      <span className="flex items-center gap-2 text-sm">
-        <span
-          className={cn(
-            "h-2 w-2 rounded-full",
-            ok ? "bg-success" : "bg-danger",
-          )}
-        />
+      <span
+        className={cn(
+          "inline-flex items-center gap-2 font-mono text-xs font-medium",
+          ok ? "text-success" : "text-danger",
+        )}
+      >
+        <span className="relative flex h-1.5 w-1.5">
+          {ok && <span className="pulse-dot absolute inset-0 rounded-full" />}
+          <span className="relative h-1.5 w-1.5 rounded-full bg-current" />
+        </span>
         {value}
       </span>
-    </div>
+    </Card>
   );
 }

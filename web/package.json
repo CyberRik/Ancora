@@ -13,6 +13,7 @@
     "test": "playwright test"
   },
   "dependencies": {
+    "@xyflow/react": "12.4.2",
     "clsx": "2.1.1",
     "lucide-react": "0.469.0",
     "next": "14.2.23",

@@ -9,18 +9,23 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from temporalio.api.history.v1 import HistoryEvent
+from temporalio.api.workflow.v1 import PendingActivityInfo, PendingWorkflowTaskInfo
 from temporalio.client import Client, WorkflowFailureError
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
+from ancora_api.graph import build_graph
 from ancora_api.recovery import FleetLiveness, build_recovery
 from ancora_api.schemas import (
     RunActivityOut,
+    RunGraphOut,
     RunLiveOut,
     RunOut,
     RunRecoveryOut,
@@ -62,6 +67,26 @@ async def _load_run(session: AsyncSession, run_id: uuid.UUID) -> WorkflowRun | N
         .where(WorkflowRun.id == run_id)
     )
     return result.scalar_one_or_none()
+
+
+@dataclass
+class _Execution:
+    """One run's full Temporal record: its history plus what is pending on it now.
+
+    History says what happened; ``describe`` says what is happening. Both views
+    built on this need both, because Temporal writes ``ActivityTaskStarted`` only
+    at an attempt's terminal event — the attempt in flight is in neither the
+    history nor any projection, only in pending state.
+    """
+
+    status: str
+    terminal: bool
+    workflow_name: str
+    events: list[HistoryEvent] = field(default_factory=list)
+    pending_activities: list[PendingActivityInfo] = field(default_factory=list)
+    pending_workflow_task: PendingWorkflowTaskInfo | None = None
+    task_queue: str | None = None
+    task_timeout: float | None = None
 
 
 def _to_out(run: WorkflowRun) -> RunOut:
@@ -274,17 +299,11 @@ class WorkflowService:
             run_id=run_id, status=status, status_note=status_note, activities=activities
         )
 
-    async def get_run_recovery(
-        self,
-        run_id: uuid.UUID,
-        *,
-        chaos_events: Sequence[dict[str, Any]] = (),
-        liveness: FleetLiveness | None = None,
-    ) -> RunRecoveryOut:
-        """Reconstruct what a kill did to this run, and what it is waiting on now.
+    async def _read_execution(self, run_id: uuid.UUID) -> _Execution:
+        """Fetch a run's full history plus its live pending state.
 
-        This reads the whole history, so it is deliberately a separate endpoint
-        from the live activity poll: the cheap view stays cheap. Phase 4's event
+        Shared by the two whole-history views (recovery and graph) and kept off
+        the hot ``/activities`` poll, which must stay cheap. Phase 4's event
         consumer replaces the fetch with a projection.
         """
         async with session_scope() as session:
@@ -293,39 +312,64 @@ class WorkflowService:
                 raise NotFoundError(f"run '{run_id}' not found")
             if run.status not in AncoraRunStatus.TERMINAL:
                 await self._refresh(run)
-            status = run.status
+            execution = _Execution(
+                status=run.status,
+                terminal=run.status in AncoraRunStatus.TERMINAL,
+                workflow_name=run.workflow_version.workflow_def.name,
+            )
             wf_id = run.temporal_wf_id
             temporal_run_id = run.temporal_run_id
 
         handle = self.client.get_workflow_handle(wf_id, run_id=temporal_run_id)
-        events = [e async for e in handle.fetch_history_events()]
+        execution.events = [e async for e in handle.fetch_history_events()]
 
-        pending_activities: Sequence[Any] = ()
-        pending_task = None
-        task_queue: str | None = None
-        task_timeout: float | None = None
         try:
             raw = (await handle.describe()).raw_description
-            pending_activities = list(raw.pending_activities)
+            execution.pending_activities = list(raw.pending_activities)
             if raw.HasField("pending_workflow_task"):
-                pending_task = raw.pending_workflow_task
+                execution.pending_workflow_task = raw.pending_workflow_task
             config = raw.execution_config
-            task_queue = config.task_queue.name or None
+            execution.task_queue = config.task_queue.name or None
             if config.HasField("default_workflow_task_timeout"):
-                task_timeout = config.default_workflow_task_timeout.ToTimedelta().total_seconds()
-        except Exception:  # noqa: BLE001 — the historical view stands on its own
+                execution.task_timeout = (
+                    config.default_workflow_task_timeout.ToTimedelta().total_seconds()
+                )
+        except Exception:  # noqa: BLE001 — the historical views stand on their own
             pass
+        return execution
 
+    async def get_run_recovery(
+        self,
+        run_id: uuid.UUID,
+        *,
+        chaos_events: Sequence[dict[str, Any]] = (),
+        liveness: FleetLiveness | None = None,
+    ) -> RunRecoveryOut:
+        """Reconstruct what a kill did to this run, and what it is waiting on now."""
+        ex = await self._read_execution(run_id)
         return build_recovery(
             run_id=run_id,
-            status=status,
-            events=events,
-            pending_activities=pending_activities,
-            pending_workflow_task=pending_task,
-            workflow_task_queue=task_queue,
-            workflow_task_timeout=task_timeout,
+            status=ex.status,
+            events=ex.events,
+            pending_activities=ex.pending_activities,
+            pending_workflow_task=ex.pending_workflow_task,
+            workflow_task_queue=ex.task_queue,
+            workflow_task_timeout=ex.task_timeout,
             chaos_events=chaos_events,
             liveness=liveness,
+        )
+
+    async def get_run_graph(self, run_id: uuid.UUID) -> RunGraphOut:
+        """The DAG this run executed, with each vertex's state right now."""
+        ex = await self._read_execution(run_id)
+        return build_graph(
+            run_id=run_id,
+            workflow_name=ex.workflow_name,
+            status=ex.status,
+            terminal=ex.terminal,
+            events=ex.events,
+            pending_activities=ex.pending_activities,
+            has_pending_workflow_task=ex.pending_workflow_task is not None,
         )
 
     # ---- internal: crude status projection ------------------------------ #

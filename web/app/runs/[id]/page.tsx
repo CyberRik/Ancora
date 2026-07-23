@@ -8,13 +8,15 @@ import {
   WORKFLOW_SHAPES,
   type Run,
   type WorkflowStep,
+  type RunGraph,
   type RunLive,
   type RunRecovery,
 } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { RunInspector } from "@/components/run-inspector";
 import { RecoveryTimeline } from "@/components/recovery-timeline";
-import { Zap } from "lucide-react";
+import { RunDag } from "@/components/run-dag";
+import { ArrowLeft, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TERMINAL = new Set([
@@ -41,20 +43,23 @@ export default function RunDetailPage() {
   // Owned here rather than inside RecoveryTimeline: this endpoint reads a whole
   // workflow history, and the step cards need the same answer.
   const [recovery, setRecovery] = useState<RunRecovery | null>(null);
+  const [graph, setGraph] = useState<RunGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [r, l, rec] = await Promise.all([
+      const [r, l, rec, g] = await Promise.all([
         api.getRun(id),
         api.getRunActivities(id).catch(() => null),
         api.getRunRecovery(id).catch(() => null),
+        api.getRunGraph(id).catch(() => null),
       ]);
       setRun(r);
       if (l) setLive(l);
       if (rec) setRecovery(rec);
+      if (g) setGraph(g);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to load");
@@ -116,6 +121,7 @@ export default function RunDetailPage() {
   if (!run) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   const shape = WORKFLOW_SHAPES[run.workflow_name];
+  const hasGraph = (graph?.nodes.length ?? 0) > 0;
   const isTerminal = TERMINAL.has(run.status);
   const startedMs = run.started_at ? new Date(run.started_at).getTime() : null;
   const endMs = run.closed_at ? new Date(run.closed_at).getTime() : now;
@@ -131,34 +137,43 @@ export default function RunDetailPage() {
     <div className="max-w-4xl space-y-6">
       <Link
         href="/runs"
-        className="text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
-        ← Runs
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Runs
       </Link>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-muted-foreground">
-            {run.workflow_name} · v{run.version}
-          </p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">
-            {shape?.summary ?? "Durable workflow run"}
-          </h2>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">{run.id}</p>
+      <header>
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <p className="eyebrow">
+              {run.workflow_name} · v{run.version}
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+              {shape?.summary ?? "Durable workflow run"}
+            </h2>
+            <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">
+              {run.id}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <StatusBadge status={run.status} />
+            {!isTerminal && (
+              <button
+                onClick={() => api.cancelRun(run.id).then(load)}
+                className="rounded-md border bg-card px-3 py-1.5 text-sm transition-colors hover:border-border-strong hover:bg-elevated"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <StatusBadge status={run.status} />
-          {!isTerminal && (
-            <button
-              onClick={() => api.cancelRun(run.id).then(load)}
-              className="rounded-md border bg-card px-3 py-1.5 text-sm hover:bg-muted"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      </div>
+        <div
+          aria-hidden
+          className={`rule-tape rule-tape--fade mt-5 ${isTerminal ? "" : "rule-tape--live"}`}
+        />
+      </header>
 
       {/* Durable-wait callout — the gated case */}
       {atGate && (
@@ -198,8 +213,13 @@ export default function RunDetailPage() {
       {/* Lifecycle timeline */}
       <Timeline run={run} atGate={atGate} elapsed={elapsed} />
 
-      {/* Step pipeline */}
-      {shape && (
+      {/* The DAG this run executed, from history. Supersedes the declared shape
+          below as soon as the workflow has scheduled anything real. */}
+      <RunDag data={graph} />
+
+      {/* Declared shape — what this workflow is *meant* to do. Only shown before
+          the run has committed to any work, when there is no graph to draw. */}
+      {shape && !hasGraph && (
         <section className="space-y-3">
           <h3 className="text-sm font-medium">Steps</h3>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">

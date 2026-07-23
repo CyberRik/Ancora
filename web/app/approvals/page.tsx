@@ -5,6 +5,14 @@ import Link from "next/link";
 import { Check, Clock, ExternalLink, Hourglass, X } from "lucide-react";
 import { api, type Approval, type ApprovalStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  Alert,
+  ButtonLink,
+  Card,
+  EmptyState,
+  PageHeader,
+  Skeleton,
+} from "@/components/ui";
 
 const TABS: { value: string; label: string }[] = [
   { value: "waiting", label: "Waiting" },
@@ -187,53 +195,80 @@ export default function ApprovalsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Approvals</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Runs parked at a human gate. A waiting workflow consumes no compute — it
-          is a durable condition in Temporal, not a held process, so it survives
-          worker restarts and can wait for days. Approving here sends the signal
-          that resumes it; the decision that counts lives in the workflow&apos;s
-          history, and this list is only the index that makes it findable.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Human in the loop"
+        title="Approvals"
+        live={status === "waiting" && (gates?.length ?? 0) > 0}
+        description="Runs parked at a human gate. A waiting workflow consumes no compute — it is a durable condition in Temporal, not a held process, so it survives worker restarts and can wait for days. Approving here sends the signal that resumes it; the decision that counts lives in the workflow's history, and this list is only the index that makes it findable."
+      />
 
-      <div className="flex gap-1">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setStatus(t.value)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm transition-colors",
-              status === t.value
-                ? "bg-accent/15 text-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Filter. A tablist rather than loose buttons, so arrow keys and screen
+          readers both behave. */}
+      <div role="tablist" aria-label="Filter by decision" className="flex flex-wrap gap-1">
+        {TABS.map((t) => {
+          const selected = status === t.value;
+          return (
+            <button
+              key={t.value}
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setStatus(t.value)}
+              className={cn(
+                "rounded-md border px-3 py-1.5 text-sm transition-colors",
+                selected
+                  ? "border-flow/30 bg-flow/10 font-medium text-flow"
+                  : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {error && (
-        <div className="rounded-lg border border-danger/40 bg-card p-3 text-sm text-muted-foreground">
-          API error: {error}. Is the stack running?
-        </div>
-      )}
-
-      {gates === null && !error && <div className="text-sm text-muted-foreground">Loading…</div>}
-
-      {gates?.length === 0 && (
-        <div className="flex items-center gap-2 rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-          <Hourglass className="h-4 w-4" />
-          Nothing {status === "all" ? "recorded" : status} right now. Start the{" "}
-          <code className="rounded bg-muted px-1">research_agent</code> or{" "}
-          <code className="rounded bg-muted px-1">human_gate</code> workflow to
-          create one.
-        </div>
+        <Alert title="Can't reach the control plane">
+          {error}. Check the API is up on{" "}
+          <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">:8080</code>.
+        </Alert>
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
+        {gates === null && !error && (
+          <>
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i} className="space-y-3 p-4">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3.5 w-full" />
+                <Skeleton className="h-3.5 w-1/2" />
+                <Skeleton className="h-9 w-full" />
+              </Card>
+            ))}
+          </>
+        )}
+
+        {gates?.length === 0 && (
+          <EmptyState
+            className="lg:col-span-2"
+            icon={Hourglass}
+            title={`Nothing ${status === "all" ? "recorded" : status}`}
+            description={
+              <>
+                Gates show up here when a workflow asks for a decision. Start{" "}
+                <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">
+                  research_agent
+                </code>{" "}
+                or{" "}
+                <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">
+                  human_gate
+                </code>{" "}
+                to create one.
+              </>
+            }
+            action={<ButtonLink href="/runs">Go to Runs</ButtonLink>}
+          />
+        )}
+
         {gates?.map((g) => (
           <GateCard key={g.id} gate={g} onDecided={() => load()} />
         ))}

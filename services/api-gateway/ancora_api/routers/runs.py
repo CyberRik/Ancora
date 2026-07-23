@@ -19,6 +19,7 @@ from ancora_api.recovery import FleetLiveness
 from ancora_api.schemas import (
     RetryAttemptOut,
     RunCostOut,
+    RunGraphOut,
     RunLinks,
     RunLiveOut,
     RunOut,
@@ -101,6 +102,21 @@ async def get_run_recovery(
     return await service.get_run_recovery(
         run_id, chaos_events=chaos.log.recent(), liveness=liveness
     )
+
+
+@router.get("/runs/{run_id}/graph", response_model=RunGraphOut)
+async def get_run_graph(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+) -> RunGraphOut:
+    """The DAG this run executed, with per-vertex live state.
+
+    Reconstructed from history rather than declared, because a workflow's graph
+    is emergent: the fan-out width comes from the input and the tail depends on
+    which branch the run took. A graph that expired at its gate is a different
+    graph from one that was approved, and both are true.
+    """
+    return await service.get_run_graph(run_id)
 
 
 @router.get("/runs/{run_id}/cost", response_model=RunCostOut)

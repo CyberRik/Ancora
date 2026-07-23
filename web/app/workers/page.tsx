@@ -1,13 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Inbox, ServerCog } from "lucide-react";
 import { api, type Queue, type Worker } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  Alert,
+  Card,
+  Chip,
+  EmptyState,
+  PageHeader,
+  Section,
+  Skeleton,
+  SkeletonCards,
+} from "@/components/ui";
 
 const STATUS_STYLES: Record<Worker["status"], string> = {
-  live: "bg-success/15 text-success",
-  stale: "bg-danger/15 text-danger",
-  unknown: "bg-muted text-muted-foreground",
+  live: "border-success/30 bg-success/10 text-success",
+  stale: "border-danger/30 bg-danger/10 text-danger",
+  unknown: "border-border-strong bg-muted text-muted-foreground",
 };
 
 function relTime(iso: string | null): string {
@@ -44,114 +55,187 @@ export default function WorkersPage() {
     };
   }, []);
 
+  const liveCount = workers?.filter((w) => w.status === "live").length ?? 0;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Workers</h2>
-        <p className="text-sm text-muted-foreground">
-          Activity workers and the capability queues they serve. Health is a Redis
-          liveness TTL refreshed each heartbeat; a worker goes{" "}
-          <span className="text-danger">stale</span> when its TTL lapses.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Fleet"
+        title="Workers"
+        description={
+          <>
+            Activity workers and the capability queues they serve. Health is a Redis liveness TTL
+            refreshed on each heartbeat — a worker goes{" "}
+            <span className="font-medium text-danger">stale</span> when its TTL lapses, which is
+            exactly what you see after a kill.
+          </>
+        }
+        live={liveCount > 0}
+      />
 
       {error && (
-        <div className="rounded-lg border border-danger/40 bg-card p-3 text-sm text-muted-foreground">
-          API error: {error}. Is the stack running?
-        </div>
+        <Alert title="Can't reach the control plane">
+          {error}. Check the API is up on{" "}
+          <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">:8080</code>.
+        </Alert>
       )}
 
-      {/* Queues */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Queues</h3>
+      <Section
+        title="Queues"
+        description="Work is routed by capability, not by hostname, so any worker advertising a pool can serve it."
+      >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {queues?.map((q) => (
-            <div key={q.queue} className="rounded-lg border bg-card p-4">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm">{q.queue}</span>
-                {q.capability && (
-                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                    {q.capability}
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 flex items-baseline gap-4">
-                <div>
-                  <div className="text-2xl font-semibold tabular-nums">
-                    {q.live_worker_count}
-                    <span className="text-sm text-muted-foreground">/{q.worker_count}</span>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">live workers</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold tabular-nums">{q.backlog}</div>
-                  <div className="text-[11px] text-muted-foreground">backlog</div>
-                </div>
-              </div>
-            </div>
-          ))}
+          {queues === null && !error && <SkeletonCards count={4} />}
           {queues?.length === 0 && (
-            <div className="text-sm text-muted-foreground">No queues.</div>
+            <EmptyState
+              className="sm:col-span-2 lg:col-span-4"
+              icon={Inbox}
+              title="No queues registered"
+              description="Queues appear once a worker starts and advertises the pools it can serve."
+            />
           )}
+          {queues?.map((q) => (
+            <Card key={q.queue} className="p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-mono text-sm">{q.queue}</span>
+                {q.capability && <Chip tone="flow">{q.capability}</Chip>}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div>
+                  <div
+                    data-numeric
+                    className={cn(
+                      "text-2xl font-semibold leading-none",
+                      q.live_worker_count > 0 ? "text-success" : "text-danger",
+                    )}
+                  >
+                    {q.live_worker_count}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      /{q.worker_count}
+                    </span>
+                  </div>
+                  <div className="eyebrow mt-1.5">Live</div>
+                </div>
+                <div>
+                  <div
+                    data-numeric
+                    className={cn(
+                      "text-2xl font-semibold leading-none",
+                      q.backlog > 0 ? "text-warning" : "text-foreground",
+                    )}
+                  >
+                    {q.backlog}
+                  </div>
+                  <div className="eyebrow mt-1.5">Backlog</div>
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
-      </section>
+      </Section>
 
-      {/* Workers */}
-      <section className="space-y-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Registered workers</h3>
+      <Section title="Registered workers">
         {workers === null && !error && (
-          <div className="text-sm text-muted-foreground">Loading…</div>
-        )}
-        {workers?.length === 0 && (
-          <div className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">
-            No activity workers registered. Start one with{" "}
-            <code className="rounded bg-muted px-1">ancora-activity-worker</code>.
+          <div className="grid gap-3 md:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i} className="space-y-3 p-4">
+                <div className="flex justify-between">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-12" />
+                </div>
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-16 w-full" />
+              </Card>
+            ))}
           </div>
         )}
+
+        {workers?.length === 0 && (
+          <EmptyState
+            icon={ServerCog}
+            title="No workers registered"
+            description={
+              <>
+                Nothing is polling for work right now. Start one with{" "}
+                <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">
+                  ancora-activity-worker
+                </code>
+                , or bring the whole stack up with{" "}
+                <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">
+                  make up
+                </code>
+                .
+              </>
+            }
+          />
+        )}
+
         <div className="grid gap-3 md:grid-cols-2">
           {workers?.map((w) => (
-            <div key={w.worker_id} className="rounded-lg border bg-card p-4">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm">{w.worker_id}</span>
+            <Card key={w.worker_id} className="p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-mono text-sm">{w.worker_id}</span>
                 <span
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                    "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider",
                     STATUS_STYLES[w.status],
                   )}
                 >
                   {w.status}
                 </span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {w.pools.map((p) => (
-                  <span
-                    key={p}
-                    className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] uppercase text-foreground"
-                  >
-                    {p}
-                  </span>
-                ))}
-              </div>
-              <dl className="mt-3 grid grid-cols-2 gap-y-1 text-xs text-muted-foreground">
-                <dt>CPUs</dt>
-                <dd className="text-right tabular-nums">{w.resources.total_cpus ?? "—"}</dd>
-                <dt>GPUs</dt>
-                <dd className="text-right tabular-nums">
-                  {w.resources.total_gpus ?? 0}
-                  {w.resources.accelerator_type ? ` · ${w.resources.accelerator_type}` : ""}
-                </dd>
-                <dt>Host / PID</dt>
-                <dd className="text-right">
-                  {w.host ?? "—"}
-                  {w.pid ? ` · ${w.pid}` : ""}
-                </dd>
-                <dt>Heartbeat</dt>
-                <dd className="text-right">{relTime(w.last_heartbeat_at)}</dd>
+
+              {w.pools.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {w.pools.map((p) => (
+                    <Chip key={p} tone="flow">
+                      {p}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+
+              <dl className="mt-4 space-y-1.5 border-t pt-3 text-xs">
+                <Row label="CPUs" value={w.resources.total_cpus ?? "—"} />
+                <Row
+                  label="GPUs"
+                  value={`${w.resources.total_gpus ?? 0}${
+                    w.resources.accelerator_type ? ` · ${w.resources.accelerator_type}` : ""
+                  }`}
+                />
+                <Row
+                  label="Host / PID"
+                  value={`${w.host ?? "—"}${w.pid ? ` · ${w.pid}` : ""}`}
+                  mono
+                />
+                <Row label="Heartbeat" value={relTime(w.last_heartbeat_at)} />
               </dl>
-            </div>
+            </Card>
           ))}
         </div>
-      </section>
+      </Section>
+    </div>
+  );
+}
+
+function Row({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd
+        data-numeric
+        className={cn("truncate text-right text-foreground", mono && "font-mono text-[11px]")}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

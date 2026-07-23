@@ -71,11 +71,16 @@ export function SystemFlow(props: SystemFlowProps) {
   const [mode, setMode] = useState<Mode>("tech");
 
   const xs = [16, 220, 424, 628, 832];
+  // Only the durable log carries the identity colour. Everything else is
+  // structural: the alternating accents this used to have encoded nothing, and
+  // the point of the picture is that one node is the source of truth the others
+  // recover from.
+  const QUIET = "--border-strong";
   const nodes: NodeSpec[] = [
     {
       id: "client",
       x: xs[0],
-      accent: "--accent",
+      accent: QUIET,
       plain: { eyebrow: "you ask", title: "A request", sub: "“run this job”" },
       tech: { eyebrow: "submit", title: "API gateway", sub: "REST · idempotent" },
     },
@@ -89,21 +94,21 @@ export function SystemFlow(props: SystemFlowProps) {
     {
       id: "orchestrator",
       x: xs[2],
-      accent: "--accent",
+      accent: QUIET,
       plain: { eyebrow: "the plan", title: "Plans the work", sub: "follows the recipe" },
       tech: { eyebrow: "orchestrate", title: "Workflow worker", sub: "deterministic replay" },
     },
     {
       id: "queues",
       x: xs[3],
-      accent: "--flow",
+      accent: QUIET,
       plain: { eyebrow: "the router", title: "Sends to a desk", sub: "fast · heavy · waiting" },
       tech: { eyebrow: "route", title: "Capability queues", sub: "cpu · gpu · io" },
     },
     {
       id: "runtime",
       x: xs[4],
-      accent: "--accent",
+      accent: QUIET,
       plain: { eyebrow: "the workers", title: "Does the work", sub: `${liveWorkers} on the job` },
       tech: { eyebrow: "execute", title: "Activity workers", sub: `${liveWorkers} live · Ray / local` },
     },

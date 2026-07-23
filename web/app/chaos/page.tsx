@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { RecoveryTimeline } from "@/components/recovery-timeline";
+import { Alert, Button, Card, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 const TERMINAL = new Set<RunStatus>([
@@ -231,51 +232,46 @@ export default function ChaosPage() {
   const watchedTerminal = watched ? TERMINAL.has(watched.status) : false;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold tracking-tight">Chaos Lab</h2>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Kill a worker — really kill it, <code className="rounded bg-muted px-1">SIGKILL</code>,
-          no drain, no warning — while a run is mid-flight, and watch the run
-          finish anyway. Completed steps replay from Temporal&apos;s history
-          instead of re-executing, so nothing is lost and nothing happens twice.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Prove it"
+        title="Chaos Lab"
+        live={live.length > 0}
+        description={
+          <>
+            Kill a worker — really kill it,{" "}
+            <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">SIGKILL</code>
+            , no drain, no warning — while a run is mid-flight, and watch the run finish anyway.
+            Completed steps replay from Temporal&apos;s history instead of re-executing, so nothing
+            is lost and nothing happens twice.
+          </>
+        }
+      />
 
       {status && !status.enabled && (
-        <div className="rounded-xl border border-warning/40 bg-warning/5 p-4">
-          <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-warning">
-            <AlertTriangle className="h-4 w-4" />
-            Chaos unavailable
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">{status.reason}</p>
-        </div>
+        <Alert tone="warning" icon={AlertTriangle} title="Chaos injection is off">
+          {status.reason}
+        </Alert>
       )}
 
-      {error && (
-        <div className="rounded-lg border border-danger/40 bg-card p-3 text-sm text-danger">
-          {error}
-        </div>
-      )}
+      {error && <Alert title="That didn't work">{error}</Alert>}
 
       {/* Step 1 — something to break */}
       <section className="space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-medium">1 · Give it something to lose</h3>
-          <button
-            onClick={startVictim}
-            disabled={starting}
-            className="inline-flex items-center gap-1.5 rounded-md bg-accent/15 px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent/25 disabled:opacity-50"
-          >
-            <Play className="h-4 w-4" />
-            {starting ? "Starting…" : "Start a research agent"}
-          </button>
-        </div>
+        <Step
+          n={1}
+          title="Give it something to lose"
+          action={
+            <Button variant="primary" onClick={startVictim} disabled={starting}>
+              <Play className="h-4 w-4" />
+              {starting ? "Starting…" : "Start a research agent"}
+            </Button>
+          }
+        />
         {live.length === 0 ? (
-          <div className="rounded-lg border border-dashed bg-card/50 p-4 text-sm text-muted-foreground">
-            No runs in flight. Start one above — it makes several LLM calls and
-            then parks at a human gate, which gives you a wide window to kill
-            something.
+          <div className="rounded-lg border border-dashed bg-card/40 p-4 text-sm text-muted-foreground">
+            No runs in flight. Start one above — it makes several LLM calls and then parks at a
+            human gate, which gives you a wide window to kill something.
           </div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
@@ -283,8 +279,8 @@ export default function ChaosPage() {
               <div
                 key={r.id}
                 className={cn(
-                  "flex items-center gap-2 rounded-lg border bg-card px-3 py-2",
-                  r.id === watching && "border-accent/50 bg-accent/5",
+                  "flex items-center gap-2 rounded-lg border bg-card px-3 py-2 transition-colors",
+                  r.id === watching ? "border-flow/50 bg-flow/5" : "hover:border-border-strong",
                 )}
               >
                 <button
@@ -295,9 +291,14 @@ export default function ChaosPage() {
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
                   <Zap className="h-3.5 w-3.5 shrink-0 text-flow" />
-                  <span className="min-w-0 flex-1 truncate font-mono text-sm">
-                    {r.workflow_name}
-                  </span>
+                  <div className="min-w-0 flex-1 flex flex-col">
+                    <span className="truncate font-mono text-sm">
+                      {r.workflow_name}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Started {r.created_at ? relTime(new Date(r.created_at).getTime() / 1000) : "just now"}
+                    </span>
+                  </div>
                   <StatusBadge status={r.status} />
                 </button>
                 <Link
@@ -314,9 +315,11 @@ export default function ChaosPage() {
 
       {/* Step 2 — break it */}
       <section className="space-y-3">
-        <h3 className="text-sm font-medium">2 · Break something</h3>
+        <Step n={2} title="Break something" />
         {status?.enabled && status.targets.length === 0 && (
-          <div className="text-sm text-muted-foreground">No containers found.</div>
+          <div className="rounded-lg border border-dashed bg-card/40 p-4 text-sm text-muted-foreground">
+            No containers found in this Compose project.
+          </div>
         )}
         <div className="grid gap-3 md:grid-cols-2">
           {status?.targets.map((t) => (
@@ -336,15 +339,18 @@ export default function ChaosPage() {
       {/* Step 3 — the pause, explained while it is happening */}
       {watched && (
         <section className="space-y-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-medium">3 · Watch it rebuild</h3>
-            <Link
-              href={`/runs/${watched.id}`}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              {watched.workflow_name} →
-            </Link>
-          </div>
+          <Step
+            n={3}
+            title="Watch it rebuild"
+            action={
+              <Link
+                href={`/runs/${watched.id}`}
+                className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {watched.workflow_name} →
+              </Link>
+            }
+          />
           {recovery && (recovery.spans.length > 0 || recovery.windows.length > 0) ? (
             <RecoveryTimeline data={recovery} terminal={watchedTerminal} />
           ) : (
@@ -370,39 +376,61 @@ export default function ChaosPage() {
       {/* Step 4 — the receipt */}
       {status && status.events.length > 0 && (
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">4 · What you broke</h3>
-          <div className="rounded-lg border bg-card">
+          <Step n={4} title="What you broke" />
+          <Card className="divide-y overflow-hidden">
             {status.events.map((e, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 border-b px-3 py-2 text-sm last:border-b-0"
-              >
+              <div key={i} className="flex items-center gap-2.5 px-3 py-2 text-sm">
                 <span
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
+                    "shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider",
                     e.action === "kill"
-                      ? "bg-danger/15 text-danger"
-                      : "bg-success/15 text-success",
+                      ? "border-danger/30 bg-danger/10 text-danger"
+                      : "border-success/30 bg-success/10 text-success",
                   )}
                 >
                   {e.action}
                 </span>
-                <span className="font-mono text-xs">{e.service}</span>
+                <span className="shrink-0 font-mono text-xs">{e.service}</span>
                 <span className="truncate text-xs text-muted-foreground">{e.detail}</span>
-                <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">
                   {relTime(e.at)}
                 </span>
               </div>
             ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Open a run and check its node list: one ledger line per node that
-            actually executed. A step that survived the kill was replayed, not
-            re-run — that is the exactly-once guarantee, visible as an absence of
-            duplicate rows.
+          </Card>
+          <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground">
+            Open a run and check its node list: one ledger line per node that actually executed. A
+            step that survived the kill was replayed, not re-run — that is the exactly-once
+            guarantee, visible as an absence of duplicate rows.
           </p>
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * A numbered step header. The numbering is load-bearing here — this page is a
+ * procedure you work through in order, not a set of parallel panels.
+ */
+function Step({
+  n,
+  title,
+  action,
+}: {
+  n: number;
+  title: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b pb-2.5">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-flow/30 bg-flow/10 font-mono text-[10px] font-medium text-flow">
+          {n}
+        </span>
+        <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+      </div>
+      {action}
     </div>
   );
 }

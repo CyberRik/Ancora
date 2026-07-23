@@ -34,19 +34,19 @@ now), so the interesting cases are unit-testable without killing anything.
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from google.protobuf.duration_pb2 import Duration
-from google.protobuf.timestamp_pb2 import Timestamp
-from temporalio.api.common.v1 import Payloads
 from temporalio.api.enums.v1 import EventType, PendingActivityState, TimeoutType
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.api.workflow.v1 import PendingActivityInfo, PendingWorkflowTaskInfo
 
+from ancora_api.history import dt as _dt
+from ancora_api.history import node_id_from_input as _node_id_from_input
+from ancora_api.history import node_label as _node_id
+from ancora_api.history import secs as _secs
 from ancora_api.schemas import (
     RecoveryMarkerOut,
     RecoverySpanOut,
@@ -155,61 +155,6 @@ class FleetLiveness:
         if not queue or not self.live_queues:
             return None
         return queue in self.live_queues
-
-
-# --------------------------------------------------------------------------- #
-# Proto helpers
-# --------------------------------------------------------------------------- #
-def _dt(ts: Timestamp | None) -> datetime | None:
-    """Proto timestamp → aware datetime, treating the zero value as unset."""
-    if ts is None or (ts.seconds == 0 and ts.nanos == 0):
-        return None
-    return ts.ToDatetime().replace(tzinfo=UTC)
-
-
-def _secs(d: Duration | None) -> float | None:
-    if d is None:
-        return None
-    value = d.ToTimedelta().total_seconds()
-    return value or None
-
-
-def _node_id_from_input(payloads: Payloads | None) -> str | None:
-    """Pull the node id out of a scheduled ``run_node`` activity's input.
-
-    Temporal assigns activity ids by sequence — "1", "2", "3" — so the id alone
-    labels the chart with numbers nobody can act on. The name the author gave the
-    node ("search", "summarize-0") is in the activity's own input, which the
-    default converter writes as plain JSON, so one decode recovers it.
-
-    Best-effort by design: a custom converter, an encrypted payload, or a shape
-    change all land in the fallback rather than breaking the view.
-    """
-    if payloads is None or not payloads.payloads:
-        return None
-    p = payloads.payloads[0]
-    if p.metadata.get("encoding") != b"json/plain":
-        return None
-    try:
-        decoded = json.loads(p.data)
-    except (ValueError, UnicodeDecodeError):
-        return None
-    if isinstance(decoded, dict):
-        node_id = decoded.get("node_id")
-        if isinstance(node_id, str) and node_id:
-            return node_id
-    return None
-
-
-def _node_id(activity_type: str, activity_id: str, decoded: str | None = None) -> str:
-    """A label for the chart: the node's own name where one can be recovered.
-
-    Falls back to the activity type (meaningful for the fixed-purpose activities
-    like ``open_approval_gate``) and finally to the raw activity id.
-    """
-    if decoded:
-        return decoded
-    return activity_id if activity_type == "run_node" else activity_type
 
 
 # --------------------------------------------------------------------------- #

@@ -162,6 +162,61 @@ export interface RunRecovery {
   handoffs: number;
 }
 
+// --- Run graph: the DAG this run actually executed -------------------------- //
+export type GraphNodeKind = "node" | "activity" | "gate" | "wait";
+export type GraphNodeState =
+  | "completed"
+  | "failed"
+  | "timed_out"
+  | "canceled"
+  | "running"
+  | "retrying"
+  | "queued"
+  | "waiting";
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: GraphNodeKind;
+  node_type: string | null;
+  activity_type: string | null;
+  activity_id: string | null;
+  /** Vertices sharing a layer were commanded by one workflow task — a fan-out. */
+  layer: number;
+  state: GraphNodeState;
+  attempts: number;
+  lost_attempts: number;
+  worker: string | null;
+  queue: string | null;
+  priority: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  failure: string | null;
+  approved: boolean | null;
+  decided_by: string | null;
+  timed_out: boolean;
+  note: string | null;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  done: boolean;
+}
+
+export interface RunGraph {
+  run_id: string;
+  workflow_name: string;
+  status: RunStatus;
+  now: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  completed: number;
+  /** Vertices discovered so far — it grows as the workflow commits to more work. */
+  total: number;
+}
+
 // --- Cost accounting (Phase 3, AN-057) ------------------------------------ //
 export interface CostLine {
   node_id: string;
@@ -288,51 +343,47 @@ async function req<T>(
 }
 
 export const api = {
-  health: (signal?: AbortSignal) =>
-    req<HealthStatus>("/healthz", { signal }),
-  version: (signal?: AbortSignal) =>
-    req<VersionInfo>("/v1/version", { signal }),
+  health: (signal?: AbortSignal) => req<HealthStatus>("/healthz", { signal }),
+  version: (signal?: AbortSignal) => req<VersionInfo>("/v1/version", { signal }),
   listWorkflows: (signal?: AbortSignal) =>
     req<WorkflowDef[]>("/v1/workflows", { signal }),
-  listRuns: (signal?: AbortSignal) =>
-    req<Run[]>("/v1/runs", { signal }),
-  getRun: (id: string, signal?: AbortSignal) =>
-    req<Run>(`/v1/runs/${id}`, { signal }),
+  listRuns: (signal?: AbortSignal) => req<Run[]>("/v1/runs", { signal }),
+  getRun: (id: string, signal?: AbortSignal) => req<Run>(`/v1/runs/${id}`, { signal }),
   getRunActivities: (id: string, signal?: AbortSignal) =>
     req<RunLive>(`/v1/runs/${id}/activities`, { signal }),
   getRunRecovery: (id: string, signal?: AbortSignal) =>
     req<RunRecovery>(`/v1/runs/${id}/recovery`, { signal }),
+  getRunGraph: (id: string, signal?: AbortSignal) =>
+    req<RunGraph>(`/v1/runs/${id}/graph`, { signal }),
   startRun: (name: string, input: Record<string, unknown>) =>
     req<StartRunResponse>(`/v1/workflows/${name}/runs`, {
       method: "POST",
       body: JSON.stringify({ input }),
     }),
-  cancelRun: (id: string) =>
-    req<Run>(`/v1/runs/${id}/cancel`, { method: "POST" }),
+  cancelRun: (id: string) => req<Run>(`/v1/runs/${id}/cancel`, { method: "POST" }),
   sendSignal: (id: string, name: string, arg?: unknown) =>
     req<Run>(`/v1/runs/${id}/signals/${name}`, {
       method: "POST",
       body: JSON.stringify(arg ?? null),
     }),
-  listWorkers: (signal?: AbortSignal) =>
-    req<Worker[]>("/v1/workers", { signal }),
-  listQueues: (signal?: AbortSignal) =>
-    req<Queue[]>("/v1/queues", { signal }),
+  listWorkers: (signal?: AbortSignal) => req<Worker[]>("/v1/workers", { signal }),
+  listQueues: (signal?: AbortSignal) => req<Queue[]>("/v1/queues", { signal }),
   getRunCost: (id: string, signal?: AbortSignal) =>
     req<RunCost>(`/v1/runs/${id}/cost`, { signal }),
   getRunRetries: (id: string, signal?: AbortSignal) =>
     req<RetryAttempt[]>(`/v1/runs/${id}/retries`, { signal }),
   listApprovals: (status = "waiting", signal?: AbortSignal) =>
     req<Approval[]>(`/v1/approvals?status=${encodeURIComponent(status)}`, { signal }),
-  decideApproval: (id: string, body: { approved: boolean; comment?: string; decided_by?: string }) =>
+  decideApproval: (
+    id: string,
+    body: { approved: boolean; comment?: string; decided_by?: string },
+  ) =>
     req<Approval>(`/v1/approvals/${id}/decision`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  listNodeTypes: (signal?: AbortSignal) =>
-    req<NodeType[]>("/v1/plugins", { signal }),
-  chaosStatus: (signal?: AbortSignal) =>
-    req<ChaosStatus>("/v1/chaos", { signal }),
+  listNodeTypes: (signal?: AbortSignal) => req<NodeType[]>("/v1/plugins", { signal }),
+  chaosStatus: (signal?: AbortSignal) => req<ChaosStatus>("/v1/chaos", { signal }),
   chaosInject: (action: "kill" | "restart", service: string) =>
     req<ChaosTarget>("/v1/chaos/inject", {
       method: "POST",
@@ -363,50 +414,139 @@ export interface WorkflowShape {
 
 export const WORKFLOW_SHAPES: Record<string, WorkflowShape> = {
   hello: {
-    summary: "Three activities in sequence — the canonical durable-execution smoke test.",
+    summary:
+      "Three activities in sequence — the canonical durable-execution smoke test.",
     steps: [
-      { label: "greet", kind: "activity", detail: "Hello, {name}!", runsOn: "workflow-worker" },
-      { label: "greet", kind: "activity", detail: "wraps the previous result", runsOn: "workflow-worker" },
-      { label: "greet", kind: "activity", detail: "wraps it once more", runsOn: "workflow-worker" },
+      {
+        label: "greet",
+        kind: "activity",
+        detail: "Hello, {name}!",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "greet",
+        kind: "activity",
+        detail: "wraps the previous result",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "greet",
+        kind: "activity",
+        detail: "wraps it once more",
+        runsOn: "workflow-worker",
+      },
     ],
   },
   gated: {
     summary: "Runs an activity, waits durably for human approval, then finishes.",
     steps: [
-      { label: "greet", kind: "activity", detail: "first activity", runsOn: "workflow-worker" },
-      { label: "approval gate", kind: "gate", detail: "waits for the approve signal — durably, indefinitely", runsOn: "workflow-worker" },
-      { label: "greet", kind: "activity", detail: "runs once approved", runsOn: "workflow-worker" },
+      {
+        label: "greet",
+        kind: "activity",
+        detail: "first activity",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "approval gate",
+        kind: "gate",
+        detail: "waits for the approve signal — durably, indefinitely",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "greet",
+        kind: "activity",
+        detail: "runs once approved",
+        runsOn: "workflow-worker",
+      },
     ],
   },
   pipeline: {
-    summary: "Dispatches a GPU-ish compute activity to the execution runtime via async completion.",
+    summary:
+      "Dispatches a GPU-ish compute activity to the execution runtime via async completion.",
     steps: [
-      { label: "ray_compute_async", kind: "dispatch", detail: "queued on ancora-cpu, run on Ray / local, completed out-of-band", runsOn: "activity-worker" },
+      {
+        label: "ray_compute_async",
+        kind: "dispatch",
+        detail: "queued on ancora-cpu, run on Ray / local, completed out-of-band",
+        runsOn: "activity-worker",
+      },
     ],
   },
   research_agent: {
-    summary: "Orchestrates LLM nodes to search, summarize, and synthesize a report with a human-in-the-loop gate.",
+    summary:
+      "Orchestrates LLM nodes to search, summarize, and synthesize a report with a human-in-the-loop gate.",
     steps: [
-      { label: "search", kind: "activity", detail: "LLM agent searches for sources", runsOn: "activity-worker" },
-      { label: "summarize (fan-out)", kind: "activity", detail: "parallel summarization of each source", runsOn: "activity-worker" },
-      { label: "synthesize", kind: "activity", detail: "synthesize a final report from summaries", runsOn: "activity-worker" },
-      { label: "approval gate", kind: "gate", detail: "durably waits for human approval before publishing", runsOn: "workflow-worker" },
-      { label: "publish", kind: "activity", detail: "publishes the report if approved", runsOn: "activity-worker" },
+      {
+        label: "search",
+        kind: "activity",
+        detail: "LLM agent searches for sources",
+        runsOn: "activity-worker",
+      },
+      {
+        label: "summarize (fan-out)",
+        kind: "activity",
+        detail: "parallel summarization of each source",
+        runsOn: "activity-worker",
+      },
+      {
+        label: "synthesize",
+        kind: "activity",
+        detail: "synthesize a final report from summaries",
+        runsOn: "activity-worker",
+      },
+      {
+        label: "approval gate",
+        kind: "gate",
+        detail: "durably waits for human approval before publishing",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "publish",
+        kind: "activity",
+        detail: "publishes the report if approved",
+        runsOn: "activity-worker",
+      },
     ],
   },
   human_gate: {
-    summary: "A gate that expires and escalates — nobody deciding is itself a decision.",
+    summary:
+      "A gate that expires and escalates — nobody deciding is itself a decision.",
     steps: [
-      { label: "approval gate", kind: "gate", detail: "durable timer; expires after N days", runsOn: "workflow-worker" },
-      { label: "escalate", kind: "activity", detail: "runs only on the expiry branch", runsOn: "workflow-worker" },
+      {
+        label: "approval gate",
+        kind: "gate",
+        detail: "durable timer; expires after N days",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "escalate",
+        kind: "activity",
+        detail: "runs only on the expiry branch",
+        runsOn: "workflow-worker",
+      },
     ],
   },
   durability_demo: {
     summary: "A 3-step pipeline that survives a mid-run worker failure.",
     steps: [
-      { label: "ingest_dataset", kind: "activity", detail: "pulls the dataset — the step we must never redo", runsOn: "workflow-worker" },
-      { label: "process_records", kind: "activity", detail: "fails once, then recovers on retry", runsOn: "workflow-worker" },
-      { label: "export_results", kind: "activity", detail: "writes the finished output", runsOn: "workflow-worker" },
+      {
+        label: "ingest_dataset",
+        kind: "activity",
+        detail: "pulls the dataset — the step we must never redo",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "process_records",
+        kind: "activity",
+        detail: "fails once, then recovers on retry",
+        runsOn: "workflow-worker",
+      },
+      {
+        label: "export_results",
+        kind: "activity",
+        detail: "writes the finished output",
+        runsOn: "workflow-worker",
+      },
     ],
   },
 };

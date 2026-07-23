@@ -202,6 +202,86 @@ class RunRecoveryOut(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Run graph — the DAG the run actually executed, with live node states
+# --------------------------------------------------------------------------- #
+class GraphNodeOut(BaseModel):
+    """One vertex of a run's DAG, collapsed across its attempts.
+
+    A node is a *unit of durable work*, not an attempt: retries reuse the same
+    scheduled event, so a node that died with a worker and succeeded on attempt 2
+    is one vertex carrying ``attempts=2``. The per-attempt story is the recovery
+    view's job.
+    """
+
+    id: str
+    label: str
+    # node | activity | gate | wait
+    kind: str
+    # For ``kind="node"``: the built-in class (llm, http, python, database).
+    node_type: str | None = None
+    # Temporal activity type, absent for the synthesized gate and wait vertices.
+    activity_type: str | None = None
+    activity_id: str | None = None
+    # Topological rank: nodes sharing a layer were commanded by one workflow task,
+    # i.e. the workflow decided on them together and they may run concurrently.
+    layer: int
+    # completed | failed | timed_out | canceled | running | retrying | queued | waiting
+    state: str
+    attempts: int = 1
+    # Attempts that ended without a recorded result — the ones a worker took down.
+    lost_attempts: int = 0
+    worker: str | None = None
+    queue: str | None = None
+    priority: str | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
+    failure: str | None = None
+    # Gate vertices only: the decision, once one arrived.
+    approved: bool | None = None
+    decided_by: str | None = None
+    timed_out: bool = False
+    # Explanation shown when the DAG alone would not say why a vertex looks stuck.
+    note: str | None = None
+
+
+class GraphEdgeOut(BaseModel):
+    """A happens-after relation between two vertices, as Temporal recorded it.
+
+    Edges come from Temporal's own causality: an activity's scheduled event names
+    the workflow task that commanded it, so vertices in layer *n+1* were decided
+    on only after layer *n*'s results were in hand. That is a **scheduling**
+    dependency, which is what history proves — not a data dependency, which it
+    does not record. ``done`` marks an edge whose source has a recorded result.
+    """
+
+    source: str
+    target: str
+    done: bool = False
+
+
+class RunGraphOut(BaseModel):
+    """A run's DAG reconstructed from history, with per-vertex live state.
+
+    Reconstructed rather than declared: the shape is whatever the workflow really
+    did on this run, including the branch it took, so a graph that expired at a
+    gate looks different from one that was approved.
+    """
+
+    run_id: uuid.UUID
+    workflow_name: str
+    status: str
+    now: datetime
+    nodes: list[GraphNodeOut] = Field(default_factory=list)
+    edges: list[GraphEdgeOut] = Field(default_factory=list)
+    # Vertices with a recorded result, out of the vertices discovered so far. The
+    # denominator grows as the workflow decides on more work — a DAG read from
+    # history cannot know steps the workflow has not committed to yet.
+    completed: int = 0
+    total: int = 0
+
+
+# --------------------------------------------------------------------------- #
 # Cost accounting (Phase 3, AN-056/AN-057)
 # --------------------------------------------------------------------------- #
 class CostLineOut(BaseModel):

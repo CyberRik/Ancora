@@ -195,6 +195,27 @@ Two things to know when you try this:
   looks idle for a while before it retries. Heartbeats are what shrink that
   window, which is why long-running nodes declare one.
 
+### The run graph
+
+Every run page draws the **DAG the run actually executed** — search fanning out
+to three summaries, rejoining at the synthesis, parked at a human gate — with
+each step's live state, worker, queue, timing and attempt count.
+
+It is reconstructed per run rather than declared, because a workflow's graph is
+emergent: it is ordinary Python deciding step by step what to schedule next, so
+the fan-out width comes from the input and the tail depends on which branch the
+run took. A run that expired at its gate is a different graph from one that was
+approved, and both are true.
+
+The columns are not a layout guess. Every activity's scheduled event names the
+workflow task that commanded it, so steps in one column were decided on together
+— they really did run concurrently — and a step in the next column was decided
+on only once the previous results were in hand. A step retried after a worker
+died stays **one** vertex, badged with its attempt count, because the work
+happened once.
+
+`GET /v1/runs/{id}/graph` returns the same thing as JSON.
+
 `GET /v1/runs/{id}/recovery` is the machine-readable form of the Recovery view:
 every attempt on a time axis, the fleet events around them, and the clock any
 pending work is blocked on. It distinguishes the three waits that look identical
@@ -202,6 +223,9 @@ from outside — `queued` (nobody polling; free, clears instantly), `detecting`
 (an attempt stranded on a process that is gone; costs one timeout), and
 `backoff` (the retry policy holding the next attempt back). Only `detecting` is
 a design decision, and its length is the node's own timeout.
+
+Both views sit above the same history. The graph answers *what this run is made
+of*; the recovery view answers *why it is not moving right now*.
 
 Verify no work was duplicated afterwards with
 `GET /v1/runs/{id}/cost` — one ledger line per node that actually executed.
