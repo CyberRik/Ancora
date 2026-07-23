@@ -13,9 +13,11 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -213,6 +215,97 @@ class Inbox(Base):
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = _created_at()
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CostLedger(Base):
+    """Append-only record of what each node execution cost (AN-056, AN-057).
+
+    The workflow accumulates cost in-band (the activity result carries it) because
+    enforcement must be replay-deterministic; this table is the *reporting* view —
+    it answers "what did this run cost, broken down by node, model, and provider"
+    without replaying history. Append-only and keyed by ``(wf_id, node_id,
+    attempt)`` so a retried node contributes one row per attempt that actually ran,
+    and a replay contributes none.
+    """
+
+    __tablename__ = "cost_ledger"
+    __table_args__ = (
+        UniqueConstraint(
+            "temporal_wf_id", "node_id", "attempt", name="uq_cost_ledger_node_attempt"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    temporal_wf_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    node_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    node_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    usd: Mapped[float] = mapped_column(Numeric(18, 8, asdecimal=False), nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    gpu_seconds: Mapped[float] = mapped_column(
+        Numeric(18, 6, asdecimal=False), nullable=False, default=0
+    )
+    created_at: Mapped[datetime] = _created_at()
+
+
+class ApprovalGate(Base):
+    """Index of human-approval gates awaiting a decision (AN-064).
+
+    **Not authoritative.** The decision that matters is the Temporal signal in the
+    workflow's history; this table exists so the UI can answer "what is waiting on
+    me?" without scanning every running workflow. A row is written when a workflow
+    parks at a gate and updated when it resumes — if the two ever disagree,
+    Temporal wins and the projection is rebuilt.
+    """
+
+    __tablename__ = "approval_gate"
+    __table_args__ = (
+        UniqueConstraint("temporal_wf_id", "gate_id", name="uq_approval_gate_wf_gate"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    temporal_wf_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    gate_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # waiting | approved | rejected | expired
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="waiting")
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What the human is being asked to sign off on (the report, the diff, ...).
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    requested_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RetryAttempt(Base):
+    """One failed node attempt and why it failed (AN-044 support).
+
+    Retries are the durability story's most visible behaviour, and "it retried
+    seven times" is useless without "…because the provider kept returning 429".
+    Each row records the classification (transient vs terminal) the runtime made,
+    which is what decided whether a retry happened at all.
+    """
+
+    __tablename__ = "retry_attempt"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    temporal_wf_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    node_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    node_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # True when the runtime judged the failure retryable.
+    transient: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    retry_after_seconds: Mapped[float | None] = mapped_column(
+        Numeric(12, 3, asdecimal=False), nullable=True
+    )
+    worker_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = _created_at()
 
 
 class NodeExecution(Base):

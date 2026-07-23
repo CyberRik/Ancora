@@ -27,6 +27,7 @@ from ancora_activity_worker.registration import WorkerRegistration
 from ancora_activity_worker.settings import ActivityWorkerSettings
 from ancora_common.logging import configure_logging
 from ancora_common.resources import queue_for
+from ancora_common.scheduler_client import SchedulerClient
 from ancora_common.temporal import connect
 
 logger = logging.getLogger("ancora.activity-worker")
@@ -42,6 +43,10 @@ async def _run() -> None:
     runtime.set_completion_client(client)
     runtime.set_backend(connect_backend(settings.ray_address))
     runtime.set_node_recorder(DbNodeRecorder(settings.worker_id))
+    scheduler = SchedulerClient(settings.scheduler_url or None)
+    runtime.set_scheduler(scheduler)
+    if scheduler.enabled:
+        logger.info("admission control enabled via %s", settings.scheduler_url)
 
     registration = WorkerRegistration(settings) if settings.register else None
     if registration is not None:
@@ -82,6 +87,7 @@ async def _run() -> None:
 
     if registration is not None:
         await registration.stop()
+    await scheduler.aclose()
     runtime.get_backend().shutdown()
     logger.info("activity worker exited cleanly")
 

@@ -95,6 +95,82 @@ export interface RunLive {
   activities: RunActivity[];
 }
 
+// --- Cost accounting (Phase 3, AN-057) ------------------------------------ //
+export interface CostLine {
+  node_id: string;
+  node_type: string;
+  attempt: number;
+  provider: string | null;
+  model: string | null;
+  usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  gpu_seconds: number;
+  created_at: string;
+}
+
+export interface CostGroup {
+  key: string;
+  usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  calls: number;
+}
+
+export interface RunCost {
+  run_id: string;
+  total_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  gpu_seconds: number;
+  by_node: CostGroup[];
+  by_model: CostGroup[];
+  by_provider: CostGroup[];
+  lines: CostLine[];
+}
+
+export interface RetryAttempt {
+  node_id: string;
+  node_type: string;
+  attempt: number;
+  error: string | null;
+  transient: boolean;
+  retry_after_seconds: number | null;
+  created_at: string;
+}
+
+// --- Human-in-the-loop (Phase 3, AN-064) ---------------------------------- //
+export type ApprovalStatus = "waiting" | "approved" | "rejected" | "expired";
+
+export interface Approval {
+  id: string;
+  run_id: string | null;
+  temporal_wf_id: string;
+  gate_id: string;
+  workflow_name: string | null;
+  status: ApprovalStatus;
+  prompt: string | null;
+  payload: Record<string, unknown> | null;
+  requested_at: string;
+  expires_at: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  comment: string | null;
+}
+
+// --- Node catalog (Phase 3, AN-058) --------------------------------------- //
+export interface NodeType {
+  type_name: string;
+  version: string;
+  summary: string;
+  input_schema: Record<string, unknown>;
+  output_schema: Record<string, unknown>;
+  resources: Record<string, unknown>;
+  sandbox: string;
+  idempotent: boolean;
+  origin: string;
+}
+
 async function req<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
@@ -150,6 +226,19 @@ export const api = {
     req<Worker[]>("/v1/workers", { signal }),
   listQueues: (signal?: AbortSignal) =>
     req<Queue[]>("/v1/queues", { signal }),
+  getRunCost: (id: string, signal?: AbortSignal) =>
+    req<RunCost>(`/v1/runs/${id}/cost`, { signal }),
+  getRunRetries: (id: string, signal?: AbortSignal) =>
+    req<RetryAttempt[]>(`/v1/runs/${id}/retries`, { signal }),
+  listApprovals: (status = "waiting", signal?: AbortSignal) =>
+    req<Approval[]>(`/v1/approvals?status=${encodeURIComponent(status)}`, { signal }),
+  decideApproval: (id: string, body: { approved: boolean; comment?: string; decided_by?: string }) =>
+    req<Approval>(`/v1/approvals/${id}/decision`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listNodeTypes: (signal?: AbortSignal) =>
+    req<NodeType[]>("/v1/plugins", { signal }),
 };
 
 // --------------------------------------------------------------------------- //
@@ -204,6 +293,21 @@ export const WORKFLOW_SHAPES: Record<string, WorkflowShape> = {
       { label: "synthesize", kind: "activity", detail: "synthesize a final report from summaries", runsOn: "activity-worker" },
       { label: "approval gate", kind: "gate", detail: "durably waits for human approval before publishing", runsOn: "workflow-worker" },
       { label: "publish", kind: "activity", detail: "publishes the report if approved", runsOn: "activity-worker" },
+    ],
+  },
+  human_gate: {
+    summary: "A gate that expires and escalates — nobody deciding is itself a decision.",
+    steps: [
+      { label: "approval gate", kind: "gate", detail: "durable timer; expires after N days", runsOn: "workflow-worker" },
+      { label: "escalate", kind: "activity", detail: "runs only on the expiry branch", runsOn: "workflow-worker" },
+    ],
+  },
+  durability_demo: {
+    summary: "A 3-step pipeline that survives a mid-run worker failure.",
+    steps: [
+      { label: "ingest_dataset", kind: "activity", detail: "pulls the dataset — the step we must never redo", runsOn: "workflow-worker" },
+      { label: "process_records", kind: "activity", detail: "fails once, then recovers on retry", runsOn: "workflow-worker" },
+      { label: "export_results", kind: "activity", detail: "writes the finished output", runsOn: "workflow-worker" },
     ],
   },
 };

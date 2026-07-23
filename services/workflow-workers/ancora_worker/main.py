@@ -17,9 +17,16 @@ from ancora_common.logging import configure_logging
 from ancora_common.temporal import connect
 from ancora_worker.catalog_report import report_catalog
 from ancora_worker.examples import ACTIVITIES, WORKFLOWS
+from ancora_worker.gate_activities import GATE_ACTIVITIES
 from ancora_worker.settings import WorkerSettings
 
 logger = logging.getLogger("ancora.worker")
+
+# Approval-gate bookkeeping rides the orchestration queue (see gate_activities).
+# Registered here rather than in examples.py because it reaches the ORM, and
+# anything examples.py imports is also imported inside the workflow sandbox —
+# where SQLAlchemy is not importable.
+ALL_ACTIVITIES = [*ACTIVITIES, *GATE_ACTIVITIES]
 
 
 async def _run() -> None:
@@ -38,7 +45,7 @@ async def _run() -> None:
         client,
         task_queue=settings.task_queue,
         workflows=WORKFLOWS,
-        activities=ACTIVITIES,
+        activities=ALL_ACTIVITIES,
         max_concurrent_activities=settings.max_concurrent_activities,
     )
 

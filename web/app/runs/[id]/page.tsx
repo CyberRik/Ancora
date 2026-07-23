@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { api, WORKFLOW_SHAPES, type Run, type WorkflowStep } from "@/lib/api";
+import { api, WORKFLOW_SHAPES, type Run, type WorkflowStep, type RunLive } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
+import { RunInspector } from "@/components/run-inspector";
 import { cn } from "@/lib/utils";
 
 const TERMINAL = new Set(["Completed", "Failed", "Cancelled", "Terminated", "TimedOut"]);
@@ -21,13 +22,19 @@ function fmtDuration(ms: number): string {
 export default function RunDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [run, setRun] = useState<Run | null>(null);
+  const [live, setLive] = useState<RunLive | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setRun(await api.getRun(id));
+      const [r, l] = await Promise.all([
+        api.getRun(id),
+        api.getRunActivities(id).catch(() => null)
+      ]);
+      setRun(r);
+      if (l) setLive(l);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "failed to load");
@@ -142,6 +149,16 @@ export default function RunDetailPage() {
         </div>
       )}
 
+      {/* Live progress note */}
+      {live?.status_note && (
+        <div className="rounded-xl border border-flow/40 bg-flow/5 p-4">
+          <div className="font-mono text-[11px] uppercase tracking-wider text-flow">
+            Live Progress
+          </div>
+          <p className="mt-1 text-sm font-medium">{live.status_note}</p>
+        </div>
+      )}
+
       {/* Lifecycle timeline */}
       <Timeline run={run} atGate={atGate} elapsed={elapsed} />
 
@@ -165,6 +182,9 @@ export default function RunDetailPage() {
           </div>
         </section>
       )}
+
+      {/* Per-node inspector: attempts, failures, and cost (Phase 3) */}
+      <RunInspector runId={run.id} live={live} terminal={isTerminal} />
 
       {/* Result */}
       <Result run={run} />
@@ -357,7 +377,7 @@ function Payload({ title, data }: { title: string; data: Record<string, unknown>
   return (
     <div className="rounded-lg border bg-card p-3">
       <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{title}</div>
-      <pre className="mt-1 overflow-x-auto text-sm">{data ? JSON.stringify(data, null, 2) : "—"}</pre>
+      <pre className="mt-1 max-h-80 overflow-x-auto overflow-y-auto text-sm">{data ? JSON.stringify(data, null, 2) : "—"}</pre>
     </div>
   );
 }

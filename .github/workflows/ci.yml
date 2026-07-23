@@ -128,3 +128,11 @@ jobs:
           push: false
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
+      - name: Build scheduler image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/scheduler/Dockerfile
+          push: false
+          cache-from: type=gha,scope=scheduler
+          cache-to: type=gha,mode=max,scope=scheduler

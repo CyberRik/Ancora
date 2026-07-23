@@ -21,6 +21,22 @@ from typing import Any, ClassVar, Protocol
 from pydantic import BaseModel, Field
 
 
+def _merge_label(left: str | None, right: str | None) -> str | None:
+    """Combine two provenance labels when summing costs.
+
+    An unset side carries no information, so it must not erase a set one — the
+    accumulator starts at ``Cost()`` with everything ``None``, and treating that
+    as a conflicting value would strip the provider and model off the very first
+    recorded cost. Only two *different* real labels collapse to ``None``, which
+    honestly reports "this total spans more than one source".
+    """
+    if left is None:
+        return right
+    if right is None or left == right:
+        return left
+    return None
+
+
 class Cost(BaseModel):
     """Normalized cost of a single node execution (AN-056).
 
@@ -41,9 +57,8 @@ class Cost(BaseModel):
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
             gpu_seconds=self.gpu_seconds + other.gpu_seconds,
-            # Provenance collapses to None once costs from different sources merge.
-            provider=self.provider if self.provider == other.provider else None,
-            model=self.model if self.model == other.model else None,
+            provider=_merge_label(self.provider, other.provider),
+            model=_merge_label(self.model, other.model),
         )
 
 

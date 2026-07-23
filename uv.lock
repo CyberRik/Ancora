@@ -16,6 +16,7 @@ members = [
     "ancora-cli",
     "ancora-common",
     "ancora-monorepo",
+    "ancora-scheduler",
     "ancora-worker",
 ]
 
@@ -172,6 +173,18 @@ wheels = [
 ]
 
 [[package]]
+name = "aiosqlite"
+version = "0.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0d/3a/22ff5415bf4d296c1e92b07fd746ad42c96781f13295a074d58e77747848/aiosqlite-0.20.0.tar.gz", hash = "sha256:6d35c8c256637f4672f843c31021464090805bf925385ac39473fb16eaaca3d7", size = 21691, upload-time = "2024-02-20T06:12:53.915Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/c4/c93eb22025a2de6b83263dfe3d7df2e19138e345bca6f18dba7394120930/aiosqlite-0.20.0-py3-none-any.whl", hash = "sha256:36a1deaca0cac40ebe32aac9977a6e2bbc7f5189f23f4a54d5908986729e5bd6", size = 15564, upload-time = "2024-02-20T06:12:50.657Z" },
+]
+
+[[package]]
 name = "alembic"
 version = "1.18.5"
 source = { registry = "https://pypi.org/simple" }
@@ -190,6 +203,7 @@ name = "ancora"
 version = "0.1.0"
 source = { editable = "packages/sdk-python" }
 dependencies = [
+    { name = "ancora-common" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "temporalio" },
@@ -197,6 +211,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ancora-common", editable = "packages/common" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "temporalio", specifier = ">=1.9,<2" },
@@ -312,6 +327,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiosqlite" },
     { name = "httpx" },
     { name = "mypy" },
     { name = "pre-commit" },
@@ -324,12 +340,40 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiosqlite", specifier = "==0.20.0" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "mypy", specifier = "==1.15.0" },
     { name = "pre-commit", specifier = "==4.1.0" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = "==0.25.3" },
     { name = "ruff", specifier = "==0.9.6" },
+]
+
+[[package]]
+name = "ancora-scheduler"
+version = "0.1.0"
+source = { editable = "services/scheduler" }
+dependencies = [
+    { name = "ancora" },
+    { name = "ancora-common" },
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyyaml" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "watchfiles" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ancora", editable = "packages/sdk-python" },
+    { name = "ancora-common", editable = "packages/common" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "pydantic", specifier = ">=2.6" },
+    { name = "pydantic-settings", specifier = ">=2.7" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+    { name = "watchfiles", specifier = ">=0.24" },
 ]
 
 [[package]]

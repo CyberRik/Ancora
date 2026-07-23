@@ -23,6 +23,7 @@ ancora-cli = { workspace = true }
 ancora-api = { workspace = true }
 ancora-worker = { workspace = true }
 ancora-activity-worker = { workspace = true }
+ancora-scheduler = { workspace = true }
 
 [dependency-groups]
 # Shared dev toolchain, installed into the workspace virtualenv via `uv sync`.
@@ -33,6 +34,9 @@ dev = [
     "pytest-asyncio==0.25.3",
     "httpx==0.28.1",
     "pre-commit==4.1.0",
+    # An in-process async SQL engine so the DatabaseNode's parameterization and
+    # injection guarantees are tested against a real driver, not a mock.
+    "aiosqlite==0.20.0",
 ]
 
 # ---------------------------------------------------------------------------
@@ -52,7 +56,7 @@ select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501", "B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["ancora", "ancora_api", "ancora_cli", "ancora_common", "ancora_worker", "ancora_activity_worker"]
+known-first-party = ["ancora", "ancora_api", "ancora_cli", "ancora_common", "ancora_worker", "ancora_activity_worker", "ancora_scheduler"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -73,6 +77,7 @@ mypy_path = [
     "services/api-gateway",
     "services/workflow-workers",
     "services/activity-workers",
+    "services/scheduler",
 ]
 files = [
     "packages/sdk-python/ancora",
@@ -81,11 +86,12 @@ files = [
     "services/api-gateway/ancora_api",
     "services/workflow-workers/ancora_worker",
     "services/activity-workers/ancora_activity_worker",
+    "services/scheduler/ancora_scheduler",
 ]
 
 [[tool.mypy.overrides]]
 # Third-party libs without stubs — don't fail the strict gate on them.
-module = ["ray.*", "temporalio.*", "redis.*"]
+module = ["ray.*", "temporalio.*", "redis.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

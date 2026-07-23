@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Box,
   GitBranch,
   HeartPulse,
   LayoutDashboard,
   Play,
   ServerCog,
   ShieldAlert,
+  Stamp,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,8 @@ const NAV = [
   { href: "/demo", label: "Durability Demo", icon: ShieldAlert },
   { href: "/workflows", label: "Workflows", icon: GitBranch },
   { href: "/runs", label: "Runs", icon: Play },
+  { href: "/approvals", label: "Approvals", icon: Stamp },
+  { href: "/nodes", label: "Nodes", icon: Box },
   { href: "/workers", label: "Workers", icon: ServerCog },
   { href: "/history", label: "History", icon: Activity },
   { href: "/chaos", label: "Chaos", icon: Zap },
@@ -33,7 +37,7 @@ export function Nav() {
         <span className="text-lg">⚓</span>
         <span className="font-semibold tracking-tight">Ancora</span>
         <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-          v0.1
+          v0.4
         </span>
       </div>
       <nav className="flex flex-col gap-1 p-2" aria-label="Primary">
@@ -58,7 +62,7 @@ export function Nav() {
         })}
       </nav>
       <div className="mt-auto p-3 text-[11px] text-muted-foreground">
-        Phase 2 · execution runtime
+        Phase 3 · scheduler + nodes
       </div>
     </aside>
   );

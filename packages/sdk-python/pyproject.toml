@@ -9,6 +9,11 @@ dependencies = [
     "pydantic>=2.6",
     "temporalio>=1.9,<2",
     "httpx>=0.27.0",
+    # Capability → task-queue routing (ancora_common.resources) is the single
+    # source of truth shared by the SDK, the workers, the API, and the scheduler.
+    # Forking it into the SDK would let workflow routing silently drift from the
+    # queues workers actually poll, so the SDK depends on it rather than mirroring it.
+    "ancora-common",
 ]
 
 [build-system]

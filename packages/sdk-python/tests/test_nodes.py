@@ -70,6 +70,24 @@ def test_cost_addition_merges_and_collapses_provenance() -> None:
     assert mixed.provider is None
 
 
+def test_an_empty_accumulator_does_not_erase_provenance() -> None:
+    # NodeContext starts at Cost(); if the empty side counted as a conflicting
+    # value, every node's first recorded cost would land in the ledger with a
+    # null provider and model — and the by-model rollup would be all "—".
+    ctx = NodeContext(node_id="n", idempotency_key="k")
+    ctx.record_cost(Cost(usd=0.5, provider="gemini", model="gemini-3.5-flash-lite"))
+    assert ctx.total_cost.provider == "gemini"
+    assert ctx.total_cost.model == "gemini-3.5-flash-lite"
+
+
+def test_provenance_survives_repeated_costs_from_one_source() -> None:
+    ctx = NodeContext(node_id="n", idempotency_key="k")
+    ctx.record_cost(Cost(usd=0.1, provider="gemini", model="flash"))
+    ctx.record_cost(Cost(usd=0.2, provider="gemini", model="flash"))
+    assert ctx.total_cost.usd == pytest.approx(0.3)
+    assert ctx.total_cost.provider == "gemini"
+
+
 # --------------------------------------------------------------------------- #
 # Registry / catalog (AN-058)
 # --------------------------------------------------------------------------- #

@@ -140,6 +140,34 @@ services:
     ]
     restart: on-failure
 
+  # Admission control (Phase 3): rate limits, backpressure, fairness, budgets.
+  # The activity worker's client fails open, so this being down degrades to
+  # "no admission control" rather than halting the fleet.
+  scheduler:
+    build:
+      context: ../..
+      dockerfile: services/scheduler/Dockerfile
+    environment:
+      - ANCORA_ENVIRONMENT=development
+      - ANCORA_LOG_JSON=false
+      - ANCORA_PORT=8090
+      # Edit deploy/scheduler/policy.yaml and the next admission uses it — the
+      # store re-reads on mtime change, no restart needed.
+      - ANCORA_SCHEDULER_CONFIG_PATH=/app/policy/policy.yaml
+      - WATCHFILES_FORCE_POLLING=true
+    ports:
+      - "8090:8090"
+    volumes:
+      - ../../services/scheduler:/app/services/scheduler
+      - ../../packages/sdk-python:/app/packages/sdk-python
+      - ../../packages/common:/app/packages/common
+      - ../scheduler:/app/policy
+    command: [
+      "watchfiles", "--filter", "python", "ancora-scheduler",
+      "/app/services/scheduler", "/app/packages",
+    ]
+    restart: on-failure
+
   # Activity worker (execution runtime). Defaults to the in-process LocalBackend;
   # set ANCORA_RAY_ADDRESS to attach to the `ray-head` service (profile: ray).
   activity-worker:
@@ -153,6 +181,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      scheduler:
+        condition: service_started
     env_file:
       - ../../.env
     environment:
@@ -162,6 +192,8 @@ services:
       - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_POOLS=["cpu","io"]
       - ANCORA_TOTAL_CPUS=4
+      # Admission control. Unset this to run without a scheduler entirely.
+      - ANCORA_SCHEDULER_URL=http://scheduler:8090
       - WATCHFILES_FORCE_POLLING=true
       # - ANCORA_RAY_ADDRESS=ray://ray-head:10001   # enable with --profile ray
     volumes:

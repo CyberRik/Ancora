@@ -109,3 +109,98 @@ class RunLiveOut(BaseModel):
     # Optional workflow-reported progress note (``current_status`` query, if any).
     status_note: str | None = None
     activities: list[RunActivityOut] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Cost accounting (Phase 3, AN-056/AN-057)
+# --------------------------------------------------------------------------- #
+class CostLineOut(BaseModel):
+    """One node execution's contribution to a run's bill."""
+
+    node_id: str
+    node_type: str
+    attempt: int
+    provider: str | None
+    model: str | None
+    usd: float
+    input_tokens: int
+    output_tokens: int
+    gpu_seconds: float
+    created_at: datetime
+
+
+class CostGroupOut(BaseModel):
+    """A rollup slice — by node, by model, or by provider."""
+
+    key: str
+    usd: float
+    input_tokens: int
+    output_tokens: int
+    calls: int
+
+
+class RunCostOut(BaseModel):
+    run_id: uuid.UUID
+    total_usd: float
+    input_tokens: int
+    output_tokens: int
+    gpu_seconds: float
+    by_node: list[CostGroupOut] = Field(default_factory=list)
+    by_model: list[CostGroupOut] = Field(default_factory=list)
+    by_provider: list[CostGroupOut] = Field(default_factory=list)
+    lines: list[CostLineOut] = Field(default_factory=list)
+
+
+class RetryAttemptOut(BaseModel):
+    """A failed attempt and the classification that decided whether it retried."""
+
+    node_id: str
+    node_type: str
+    attempt: int
+    error: str | None
+    transient: bool
+    retry_after_seconds: float | None
+    created_at: datetime
+
+
+# --------------------------------------------------------------------------- #
+# Human-in-the-loop (Phase 3, AN-063/AN-064)
+# --------------------------------------------------------------------------- #
+class ApprovalOut(BaseModel):
+    """A gate in the approval inbox. ``run_id`` is None if the run was pruned."""
+
+    id: uuid.UUID
+    run_id: uuid.UUID | None
+    temporal_wf_id: str
+    gate_id: str
+    workflow_name: str | None
+    status: str  # waiting | approved | rejected | expired
+    prompt: str | None
+    payload: dict[str, Any] | None
+    requested_at: datetime
+    expires_at: datetime | None
+    decided_at: datetime | None
+    decided_by: str | None
+    comment: str | None
+
+
+class ApprovalDecisionIn(BaseModel):
+    approved: bool
+    comment: str = ""
+    decided_by: str | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Node catalog (Phase 3, AN-058) — the built-ins today, plugins in Phase 5.
+# --------------------------------------------------------------------------- #
+class NodeTypeOut(BaseModel):
+    type_name: str
+    version: str
+    summary: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    resources: dict[str, Any]
+    sandbox: str
+    idempotent: bool
+    # "builtin" now; "plugin" once the registry lands (Phase 5).
+    origin: str = "builtin"

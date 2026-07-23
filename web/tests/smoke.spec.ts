@@ -27,3 +27,18 @@ test("health page loads and reports API state", async ({ page }) => {
   // Either way the page must not crash.
   await expect(page.locator("body")).toBeVisible();
 });
+
+// The Phase-3 pages both fetch on mount. CI has no API, so these assert the
+// degraded path: an error card, not a blank screen or a crashed render.
+test("approvals inbox renders without an API", async ({ page }) => {
+  await page.goto("/approvals");
+  await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Waiting" })).toBeVisible();
+  await expect(page.locator("body")).toBeVisible();
+});
+
+test("node catalog renders without an API", async ({ page }) => {
+  await page.goto("/nodes");
+  await expect(page.getByRole("heading", { name: "Node catalog" })).toBeVisible();
+  await expect(page.locator("body")).toBeVisible();
+});

@@ -31,6 +31,7 @@ class GreetOutput(BaseModel):
 @activity.defn(name="greet")
 async def greet(inp: GreetInput) -> GreetOutput:
     """A trivial activity. In Phase 2 this class of work is dispatched to Ray."""
+    await asyncio.sleep(0.5)  # Slight intentional lag to show progress in UI
     return GreetOutput(message=f"Hello, {inp.name}!")
 
 
@@ -38,13 +39,28 @@ async def greet(inp: GreetInput) -> GreetOutput:
 class HelloWorkflow(Workflow):
     """Three sequential activities — the canonical durable-execution smoke test."""
 
+    def __init__(self) -> None:
+        self._status = "Starting..."
+
     @workflow.run
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name", "world")
+
+        self._status = f"Greeting '{name}' (Step 1/3)..."
         a = await self.call(greet, GreetInput(name=name))
+
+        self._status = f"Greeting '{a.message}' (Step 2/3)..."
         b = await self.call(greet, GreetInput(name=a.message))
+
+        self._status = f"Greeting '{b.message}' (Step 3/3)..."
         c = await self.call(greet, GreetInput(name=b.message))
+
+        self._status = "Completed"
         return {"message": c.message, "steps": 3}
+
+    @workflow.query
+    def current_status(self) -> str:
+        return self._status
 
 
 @workflow.defn(name="gated")
@@ -56,13 +72,18 @@ class GatedWorkflow(Workflow):
     def __init__(self) -> None:
         self._approved = False
         self._at_gate = False
+        self._status = "Starting..."
 
     @workflow.run
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
+        self._status = "Greeting first..."
         first = await self.call(greet, GreetInput(name=params.get("name", "world")))
         self._at_gate = True
+        self._status = "At gate, waiting for approval..."
         await workflow.wait_condition(lambda: self._approved)
+        self._status = "Greeting second..."
         second = await self.call(greet, GreetInput(name=first.message))
+        self._status = "Completed"
         return {"message": second.message}
 
     @workflow.signal
@@ -73,6 +94,10 @@ class GatedWorkflow(Workflow):
     def at_gate(self) -> bool:
         """True once the first activity is done and the workflow is waiting."""
         return self._at_gate
+
+    @workflow.query
+    def current_status(self) -> str:
+        return self._status
 
 
 @workflow.defn(name="pipeline")
@@ -85,6 +110,9 @@ class PipelineWorkflow(Workflow):
     orchestration/execution split end-to-end.
     """
 
+    def __init__(self) -> None:
+        self._status = "Starting..."
+
     @workflow.run
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
         req = {
@@ -92,13 +120,19 @@ class PipelineWorkflow(Workflow):
             "batches": params.get("batches", 6),
             "batch_seconds": params.get("batch_seconds", 0.2),
         }
+        self._status = "Dispatching async compute task..."
         result: dict[str, Any] = await self.call(
             "ray_compute_async",
             req,
             task_queue=queue_for(Capability.CPU),
             start_to_close_timeout=timedelta(minutes=10),
         )
+        self._status = "Completed"
         return {"compute": result, "steps": 1}
+
+    @workflow.query
+    def current_status(self) -> str:
+        return self._status
 
 
 @workflow.defn(name="research_agent")
@@ -114,6 +148,7 @@ class ResearchAgentWorkflow(Workflow):
 
     def __init__(self) -> None:
         self._at_gate = False
+        self._status = "Starting..."
 
     @workflow.run
     async def run(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -132,6 +167,7 @@ class ResearchAgentWorkflow(Workflow):
 
         total_usd = 0.0
 
+        self._status = "Searching for sources..."
         # 1. Search for sources.
         search = await self.call_node(
             "llm", "search", llm_input(f"Find sources about {topic}"), task_queue=cpu_q
@@ -139,6 +175,7 @@ class ResearchAgentWorkflow(Workflow):
         total_usd += float(search["cost"]["usd"])
         sources = search["output"]["text"]
 
+        self._status = "Summarizing sources in parallel..."
         # 2. Summarize each source in parallel (fan-out / fan-in, AN-060).
         summaries = await self.gather(
             *[
@@ -155,6 +192,7 @@ class ResearchAgentWorkflow(Workflow):
             total_usd += float(s["cost"]["usd"])
         summary_texts = [s["output"]["text"] for s in summaries]
 
+        self._status = "Synthesizing final report..."
         # 3. Synthesize a final report.
         synth = await self.call_node(
             "llm",
@@ -165,11 +203,13 @@ class ResearchAgentWorkflow(Workflow):
         total_usd += float(synth["cost"]["usd"])
         report = synth["output"]["text"]
 
+        self._status = "Waiting for human approval to publish..."
         # 4. Durable human approval before publishing.
         self._at_gate = True
         decision = await self.approval("publish")
         self._at_gate = False
         if not decision.approved:
+            self._status = "Rejected"
             return {
                 "status": "rejected",
                 "report": report,
@@ -177,6 +217,7 @@ class ResearchAgentWorkflow(Workflow):
                 "cost_usd": total_usd,
             }
 
+        self._status = "Publishing report..."
         # 5. Publish via HTTP (idempotent) when a target is configured.
         published_status: int | None = None
         publish_url = params.get("publish_url")
@@ -193,6 +234,7 @@ class ResearchAgentWorkflow(Workflow):
             )
             published_status = int(pub["output"]["status"])
 
+        self._status = "Completed"
         return {
             "status": "published",
             "report": report,
@@ -205,6 +247,10 @@ class ResearchAgentWorkflow(Workflow):
     @workflow.query
     def at_gate(self) -> bool:
         return self._at_gate
+
+    @workflow.query
+    def current_status(self) -> str:
+        return self._status
 
 
 class DemoInput(BaseModel):
@@ -259,13 +305,17 @@ async def process_records(inp: dict[str, Any]) -> dict[str, Any]:
             body = post.get("body", "")
             total_words += len(body.split())
             h = body.encode()
-            for _ in range(5000):
+            for _ in range(500):
                 h = hashlib.sha256(h).digest()
         return total_words
 
-    if info.attempt == 1:
+    num_crashes = inp.get("num_crashes", 1)
+    if info.attempt <= num_crashes and inp.get("simulate_failure"):
         await asyncio.to_thread(do_work)  # Do some real work to take time
-        print("💥 Simulating a worker failure while processing records (attempt 1)", flush=True)
+        print(
+            f"💥 Simulating a worker failure while processing records (attempt {info.attempt}/{num_crashes})",
+            flush=True,
+        )
         raise RuntimeError("Worker failure: out-of-memory while processing records")
 
     total_words = await asyncio.to_thread(do_work)
@@ -306,7 +356,11 @@ class DurabilityDemoWorkflow(Workflow):
             start_to_close_timeout=timedelta(seconds=30),
         )
 
-        self._status = "Processing records (a worker will fail here)..."
+        self._status = (
+            "Processing records (a worker will fail here)..."
+            if params.get("simulate_failure")
+            else "Processing records..."
+        )
         # Flat, visible backoff so the "worker down — rescheduling" window is
         # long enough to see (backoff_coefficient=1.0 keeps it a predictable 5s).
         retry = RetryPolicy(
@@ -314,9 +368,22 @@ class DurabilityDemoWorkflow(Workflow):
             backoff_coefficient=1.0,
             maximum_attempts=5,
         )
+
+        process_input = dict(ingest)
+        process_input["simulate_failure"] = params.get("simulate_failure", False)
+
+        import hashlib
+
+        from temporalio import workflow as temporal_workflow
+
+        run_id = temporal_workflow.info().run_id
+        # Deterministic random: 1 to 3 crashes based on workflow run ID
+        num_crashes = (int(hashlib.md5(run_id.encode()).hexdigest()[:8], 16) % 3) + 1
+        process_input["num_crashes"] = num_crashes
+
         process = await self.call(
             process_records,
-            ingest,
+            process_input,
             retry=retry,
             start_to_close_timeout=timedelta(seconds=30),
         )
@@ -341,6 +408,46 @@ class DurabilityDemoWorkflow(Workflow):
         return self._status
 
 
+@workflow.defn(name="human_gate")
+class HumanGateWorkflow(Workflow):
+    """A gate that expires and escalates instead of waiting forever (AN-067).
+
+    The point of the expiry branch is that *nobody deciding* is itself a decision
+    the system has to handle. A release request that sits unanswered over a long
+    weekend must auto-reject and escalate, not park a workflow indefinitely.
+
+    The wait costs nothing while it runs — it is a durable timer in Temporal, not
+    a held thread — so a three-day expiry is as cheap as a three-second one. That
+    also makes it testable: under a time-skipping test server the three days pass
+    in milliseconds, and the branch that runs is the real one.
+    """
+
+    @workflow.run
+    async def run(self, params: dict[str, Any]) -> dict[str, Any]:
+        expiry = timedelta(days=float(params.get("expiry_days", 3)))
+        decision = await self.approval(
+            "release",
+            timeout=expiry,
+            prompt=str(params.get("prompt", "Approve the release?")),
+            payload={"release": params.get("release", "v1.0.0")},
+        )
+        if decision.timed_out:
+            escalated = await self.call(
+                greet, GreetInput(name=f"on-call (release {params.get('release', 'v1.0.0')})")
+            )
+            return {
+                "status": "expired",
+                "branch": "escalated",
+                "escalation": escalated.message,
+                "waited_days": expiry.days,
+            }
+        return {
+            "status": "approved" if decision.approved else "rejected",
+            "branch": "decided",
+            "comment": decision.comment,
+        }
+
+
 # Registry consumed by the worker and the catalog reporter.
 WORKFLOWS: list[type] = [
     HelloWorkflow,
@@ -348,6 +455,7 @@ WORKFLOWS: list[type] = [
     PipelineWorkflow,
     ResearchAgentWorkflow,
     DurabilityDemoWorkflow,
+    HumanGateWorkflow,
 ]
 ACTIVITIES: list[Callable[..., Any]] = [
     greet,
@@ -361,4 +469,5 @@ WORKFLOW_NAMES: dict[type, str] = {
     PipelineWorkflow: "pipeline",
     ResearchAgentWorkflow: "research_agent",
     DurabilityDemoWorkflow: "durability_demo",
+    HumanGateWorkflow: "human_gate",
 }

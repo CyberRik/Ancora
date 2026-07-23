@@ -27,9 +27,11 @@ from ancora.nodes import MockProvider, register_provider
 from ancora.nodes.llm import clear_providers
 from ancora_activity_worker import runtime
 from ancora_activity_worker.nodes_runtime import run_node
+from ancora_common import projections
 from ancora_common.inbox import InMemoryInboxGuard
 from ancora_common.resources import Capability, queue_for
 from ancora_worker.examples import ResearchAgentWorkflow, greet
+from ancora_worker.gate_activities import GATE_ACTIVITIES
 
 pytestmark = pytest.mark.temporal
 
@@ -50,6 +52,9 @@ async def env() -> AsyncIterator[WorkflowEnvironment]:
 def _node_runtime() -> Any:
     runtime.reset()
     runtime.set_inbox(InMemoryInboxGuard())
+    # No database in this test; the gate projection is reporting only, so turn it
+    # off rather than pay a connection failure per gate.
+    projections.set_enabled(False)
     clear_providers()
     register_provider(MockProvider("mock"))
     register_provider(MockProvider("mock-secondary"))
@@ -57,6 +62,7 @@ def _node_runtime() -> Any:
     yield
     runtime.reset()
     clear_providers()
+    projections.set_enabled(True)
 
 
 def _activity_workers(env: WorkflowEnvironment) -> list[Worker]:
@@ -80,7 +86,7 @@ async def test_research_agent_runs_end_to_end(env: WorkflowEnvironment) -> None:
         env.client,
         task_queue=_WF_QUEUE,
         workflows=[ResearchAgentWorkflow],
-        activities=[greet],
+        activities=[greet, *GATE_ACTIVITIES],
     )
     activity_workers = _activity_workers(env)
 
@@ -103,7 +109,10 @@ async def test_research_agent_runs_end_to_end(env: WorkflowEnvironment) -> None:
 
 async def test_research_agent_rejection_takes_reject_branch(env: WorkflowEnvironment) -> None:
     wf_worker = Worker(
-        env.client, task_queue=_WF_QUEUE, workflows=[ResearchAgentWorkflow], activities=[greet]
+        env.client,
+        task_queue=_WF_QUEUE,
+        workflows=[ResearchAgentWorkflow],
+        activities=[greet, *GATE_ACTIVITIES],
     )
     activity_workers = _activity_workers(env)
 
@@ -127,7 +136,10 @@ async def test_research_agent_rejection_takes_reject_branch(env: WorkflowEnviron
 async def test_research_agent_survives_worker_kill_at_gate(env: WorkflowEnvironment) -> None:
     # Worker A: drive the run to the durable approval gate, then die.
     wf_a = Worker(
-        env.client, task_queue=_WF_QUEUE, workflows=[ResearchAgentWorkflow], activities=[greet]
+        env.client,
+        task_queue=_WF_QUEUE,
+        workflows=[ResearchAgentWorkflow],
+        activities=[greet, *GATE_ACTIVITIES],
     )
     aw = _activity_workers(env)
     await wf_a.__aenter__()
@@ -149,7 +161,10 @@ async def test_research_agent_survives_worker_kill_at_gate(env: WorkflowEnvironm
     # The run's progress (search + summaries + synthesize) lives in history.
     # Fresh workers resume it and finish on approval — no re-execution.
     wf_b = Worker(
-        env.client, task_queue=_WF_QUEUE, workflows=[ResearchAgentWorkflow], activities=[greet]
+        env.client,
+        task_queue=_WF_QUEUE,
+        workflows=[ResearchAgentWorkflow],
+        activities=[greet, *GATE_ACTIVITIES],
     )
     aw_b = _activity_workers(env)
     async with wf_b, aw_b[0], aw_b[1]:

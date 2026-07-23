@@ -7,8 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, Query, status
 
-from ancora_api.deps import get_service
+from ancora_api.cost_service import CostService
+from ancora_api.deps import get_cost_service, get_service
 from ancora_api.schemas import (
+    RetryAttemptOut,
+    RunCostOut,
     RunLinks,
     RunLiveOut,
     RunOut,
@@ -66,6 +69,28 @@ async def get_run_activities(
 ) -> RunLiveOut:
     """Live per-activity state (real attempt counter + failure) for the demo view."""
     return await service.get_run_live(run_id)
+
+
+@router.get("/runs/{run_id}/cost", response_model=RunCostOut)
+async def get_run_cost(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+    costs: CostService = Depends(get_cost_service),
+) -> RunCostOut:
+    """What this run cost, with by-node / by-model / by-provider rollups (AN-057)."""
+    run = await service.get_run(run_id)
+    return await costs.run_cost(run_id, run.temporal_wf_id)
+
+
+@router.get("/runs/{run_id}/retries", response_model=list[RetryAttemptOut])
+async def get_run_retries(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+    costs: CostService = Depends(get_cost_service),
+) -> list[RetryAttemptOut]:
+    """Every failed attempt in this run and whether it was judged retryable."""
+    run = await service.get_run(run_id)
+    return await costs.run_retries(run.temporal_wf_id)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)

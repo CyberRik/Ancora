@@ -94,10 +94,32 @@ def get_inbox() -> Any:
     return _inbox
 
 
+# The scheduler admission client (AN-038). Unset means "no admission control" —
+# every node is admitted, which is also what an unreachable scheduler produces.
+_scheduler: Any | None = None
+
+
+def set_scheduler(client: Any) -> None:
+    global _scheduler
+    _scheduler = client
+
+
+def get_scheduler() -> Any:
+    global _scheduler
+    if _scheduler is None:
+        from ancora_common.scheduler_client import SchedulerClient
+
+        # base_url None → the client short-circuits to "admit"; the worker
+        # installs a configured client at startup when a scheduler is deployed.
+        _scheduler = SchedulerClient(None)
+    return _scheduler
+
+
 def reset() -> None:
     """Tear down process globals (used between tests)."""
-    global _backend, _completion_client, _recorder, _inbox
+    global _backend, _completion_client, _recorder, _inbox, _scheduler
     _backend = None
     _completion_client = None
     _recorder = _NoopRecorder()
     _inbox = None
+    _scheduler = None

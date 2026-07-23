@@ -9,7 +9,9 @@
   <a href="docs/IMPLEMENTATION-PLAN.md">Roadmap</a>
 </p>
 
-> **Status:** Phase 0 — walking skeleton. The stack boots; the durability engine lands in Phase 1+. See the [implementation plan](docs/IMPLEMENTATION-PLAN.md).
+> **Status:** Phase 3 — scheduler, built-in node library, and idempotency. Kill any
+> worker at any node and the run resumes with zero duplicated effects. See the
+> [implementation plan](docs/IMPLEMENTATION-PLAN.md).
 
 ---
 
@@ -24,17 +26,39 @@ Ancora is **not** an agent framework. It is the runtime *underneath* agent frame
 - **Durability core — Temporal:** event-sourced workflow state, deterministic replay, retries, timers, signals, human-in-the-loop.
 - **Compute core — Ray:** distributed & GPU-aware execution of the heavy work.
 - **The bridge:** deterministic workflows schedule **activities**; activities dispatch to Ray (with async completion for long jobs) — the idempotency seam between "exactly-once progress" and "efficient at-least-once compute."
+- **The governor — scheduler:** Temporal guarantees a node *eventually* runs, exactly once. It has no opinion on whether running it **now** is wise. The scheduler decides that against provider rate limits, queue watermarks, tenant fair shares, budgets, and deadlines — and expresses "not yet" as a durable deferral, not a dropped request.
 
 ## Repository layout
 
 ```
-packages/sdk-python/   # ancora — workflow/activity/node authoring SDK
+packages/sdk-python/   # ancora — workflow/activity/node authoring SDK + node library
+packages/common/       # shared server library — ORM, projections, rate limiter, inbox
 packages/cli/          # ancora — command-line interface
 services/api-gateway/  # FastAPI: REST + (later) WebSocket control plane
+services/scheduler/    # admission control: rate limits, backpressure, fairness, budgets
+services/workflow-workers/   # orchestration workers (deterministic workflow code)
+services/activity-workers/   # execution workers (nodes, Ray dispatch)
 web/                   # Next.js dashboard
-deploy/docker/         # local stack (Temporal, Postgres, Redis, API, web)
+deploy/docker/         # local stack (Temporal, Postgres, Redis, API, scheduler, web)
+deploy/scheduler/      # declarative scheduler policy (hot-reloaded)
 docs/                  # RFCs, architecture review, implementation plan
 ```
+
+## The node library
+
+Workflows orchestrate; **nodes** do the side-effecting work, inside activities, so
+Temporal can retry and replay them safely. Five ship built in:
+
+| Node | What it does | Notes |
+|---|---|---|
+| `llm` | Chat/completion across providers | Primary→secondary fallback chain; token/cost accounting; mock provider for CI |
+| `http` | REST call with templating | Honours `Retry-After`; 4xx terminal, 5xx/429 transient |
+| `database` | One parameterized statement | Named datasources only; bound params only; read/write split |
+| `python` | A registered Python callable | Allow-listed by name, never an importable path; optional subprocess + memory cap |
+| `approval` | Durable human gate | Resolved by signal in workflow code; optional expiry branch |
+
+Browse them (with JSON schemas) at `GET /v1/plugins`, or in the dashboard's
+**Nodes** view.
 
 ## Quickstart
 
@@ -55,6 +79,8 @@ Then open:
 | Dashboard | http://localhost:3000 |
 | API health | http://localhost:8080/healthz |
 | API version | http://localhost:8080/v1/version |
+| Scheduler state | http://localhost:8090/v1/scheduler/state |
+| Scheduler metrics | http://localhost:8090/metrics |
 | Temporal UI | http://localhost:8233 |
 
 ### Docker commands
@@ -65,6 +91,9 @@ drive it directly (compose file lives in `deploy/docker/`):
 ```bash
 # from the repo root — start everything, rebuilding changed images
 docker compose -f deploy/docker/docker-compose.yml up --build
+
+# start everything and renew anonymous volumes (useful for clean starts)
+docker compose -f deploy/docker/docker-compose.yml up --build --renew-anon-volumes
 
 # run in the background (detached), then follow logs
 docker compose -f deploy/docker/docker-compose.yml up --build -d
@@ -85,7 +114,7 @@ Everyday operations:
 docker compose -f deploy/docker/docker-compose.yml ps
 
 # tail one service's logs (services: postgres redis temporal temporal-ui
-# migrate api worker activity-worker web ray-head)
+# migrate api scheduler worker activity-worker web ray-head)
 docker compose -f deploy/docker/docker-compose.yml logs -f api
 
 # rebuild + restart just one service after a code change
@@ -109,10 +138,24 @@ docker compose -f deploy/docker/docker-compose.yml --profile ray up --build
 Without the `ray` profile, activity workers use the in-process local backend — no
 Ray required for dev or CI.
 
+### Tuning admission control
+
+Scheduler policy — provider rate limits, queue watermarks, tenant weights,
+budgets — lives in [`deploy/scheduler/policy.yaml`](deploy/scheduler/policy.yaml).
+It is re-read whenever its mtime changes, so **edit and save and the next
+admission uses it**; no restart. A document that fails validation is rejected and
+the previous policy keeps serving, with the error at
+`GET /v1/scheduler/config`. See [`services/scheduler/README.md`](services/scheduler/README.md).
+
+The worker-side client **fails open**: if the scheduler is down, nodes are
+admitted anyway and the degradation is logged. Admission control protects
+providers and queues; it must never become the thing that halts a durable fleet.
+
 | Service | Port | What it is |
 |---|---|---|
 | `web` | 3000 | Next.js dashboard |
 | `api` | 8080 | FastAPI control plane |
+| `scheduler` | 8090 | Admission control + Prometheus metrics |
 | `temporal-ui` | 8233 | Temporal web UI |
 | `temporal` | 7233 | Temporal gRPC frontend |
 | `postgres` | 5432 | Catalog + run projection |
@@ -148,7 +191,12 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Roadmap
 
-Phased delivery in [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md); issue backlog in [`docs/PROJECT-PLAN-github-issues.md`](docs/PROJECT-PLAN-github-issues.md). **By end of Phase 3 you can kill any worker mid-run and watch the workflow recover** — that's the whole point.
+Phased delivery in [`docs/IMPLEMENTATION-PLAN.md`](docs/IMPLEMENTATION-PLAN.md); issue backlog in [`docs/PROJECT-PLAN-github-issues.md`](docs/PROJECT-PLAN-github-issues.md).
+
+**Phase 3 is done: kill any worker at any node and the run resumes with zero
+duplicated effects** — that's the whole point. Next up is Phase 4: the
+event-sourced projection pipeline, OTel tracing across the Ray boundary, and a
+live-animating DAG.
 
 ## License
 

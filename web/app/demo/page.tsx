@@ -80,7 +80,7 @@ export default function DemoPage() {
     setRun(null);
     setStarting(true);
     try {
-      const res = await api.startRun("durability_demo", { message: "start" });
+      const res = await api.startRun("durability_demo", { message: "start", simulate_failure: true });
       const r = await api.getRun(res.run_id);
       setRun(r);
       pushEvent(now("started", "flow", "Pipeline started — a durable workflow is now running."));
@@ -648,7 +648,7 @@ function SuccessResult({ run, attempt }: { run: Run; attempt: number }) {
         The ingest step ran before the failure; its result was replayed from history rather than
         recomputed. No lost state, no duplicated work.
       </p>
-      <pre className="mt-3 overflow-x-auto rounded-md bg-background/60 p-3 text-[11px] text-muted-foreground">
+      <pre className="mt-3 max-h-80 overflow-y-auto overflow-x-auto rounded-md bg-background/60 p-3 text-[11px] text-muted-foreground">
         {JSON.stringify(run.output, null, 2)}
       </pre>
     </div>

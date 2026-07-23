@@ -31,3 +31,8 @@ class ActivityWorkerSettings(CommonSettings):
     liveness_ttl_seconds: int = 20
 
     max_concurrent_activities: int = 50
+
+    # Scheduler admission API (AN-038). Empty disables admission control entirely,
+    # which is also the effective behaviour if the service is unreachable — the
+    # client fails open so a scheduler outage never halts a durable fleet.
+    scheduler_url: str = ""

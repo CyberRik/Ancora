@@ -1,0 +1,50 @@
+# Ancora scheduler policy (AN-048).
+#
+# Mounted into the scheduler container and re-read whenever its mtime changes —
+# edit and save, and the next admission uses the new policy. A document that
+# fails validation is REJECTED and the previous policy keeps serving; the error
+# shows up at GET /v1/scheduler/config.
+
+# Provider token buckets (AN-040). Keys are matched most-specific first:
+#   "<provider>/<model>"  →  "<provider>"  →  "default"
+rate_limits:
+  # Gemini's free tier is genuinely tight; this keeps the demo from tripping 429s.
+  gemini: { rps: 5, burst: 10 }
+  # The CI mock provider has no real quota — keep it effectively unrestricted so
+  # tests measure the code path, not the wait.
+  mock: { rps: 100, burst: 200 }
+  mock-secondary: { rps: 100, burst: 200 }
+  default: { rps: 20, burst: 40 }
+
+# Queue-depth watermarks (AN-041). Between soft and hard, only lanes at or above
+# `backpressure_priority_cutoff` in urgency are admitted; at hard, nothing is.
+watermarks:
+  ancora-cpu: { soft: 40, hard: 160, backoff_seconds: 1.0, max_backoff_seconds: 30.0 }
+  ancora-gpu: { soft: 8, hard: 24, backoff_seconds: 2.0, max_backoff_seconds: 60.0 }
+  ancora-io: { soft: 100, hard: 400, backoff_seconds: 0.5, max_backoff_seconds: 15.0 }
+  default: { soft: 50, hard: 200 }
+
+# Weighted fair queuing + per-tenant budget (AN-042, AN-045).
+tenants:
+  default: { weight: 1.0 }
+
+fairness:
+  enabled: true
+  idle_seconds: 30.0
+  defer_seconds: 0.25
+
+budget:
+  # "soft" warns and admits; "hard" rejects; "off" disables the governor.
+  # Ships soft: a budget governor calibrated from guesses destroys more work than
+  # it saves. Flip to hard once the ledger has real numbers behind it.
+  mode: soft
+  default_run_usd: 5.0
+  warn_at: 0.8
+
+# 1 = high, 3 = normal, 5 = bulk. Only high-priority work survives the soft
+# watermark, so interactive runs keep flowing while bulk backfill waits.
+backpressure_priority_cutoff: 1
+
+# How long an admitted node may go unreported before its in-flight slot is
+# reclaimed, so a worker that dies mid-node cannot inflate the backlog forever.
+inflight_ttl_seconds: 900.0

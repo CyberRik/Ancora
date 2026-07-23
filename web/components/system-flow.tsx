@@ -68,7 +68,7 @@ function useReducedMotion(): boolean {
 export function SystemFlow(props: SystemFlowProps) {
   const { running, completed, waiting, liveWorkers, queues, connected } = props;
   const reduced = useReducedMotion();
-  const [mode, setMode] = useState<Mode>("plain");
+  const [mode, setMode] = useState<Mode>("tech");
 
   const xs = [16, 220, 424, 628, 832];
   const nodes: NodeSpec[] = [
