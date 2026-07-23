@@ -158,6 +158,29 @@ export interface Approval {
   comment: string | null;
 }
 
+// --- Chaos Lab ------------------------------------------------------------ //
+export interface ChaosTarget {
+  service: string;
+  name: string;
+  state: string;
+  killable: boolean;
+}
+
+export interface ChaosEvent {
+  action: string;
+  service: string;
+  at: number;
+  detail: string;
+}
+
+export interface ChaosStatus {
+  enabled: boolean;
+  project: string;
+  targets: ChaosTarget[];
+  events: ChaosEvent[];
+  reason: string | null;
+}
+
 // --- Node catalog (Phase 3, AN-058) --------------------------------------- //
 export interface NodeType {
   type_name: string;
@@ -239,6 +262,13 @@ export const api = {
     }),
   listNodeTypes: (signal?: AbortSignal) =>
     req<NodeType[]>("/v1/plugins", { signal }),
+  chaosStatus: (signal?: AbortSignal) =>
+    req<ChaosStatus>("/v1/chaos", { signal }),
+  chaosInject: (action: "kill" | "restart", service: string) =>
+    req<ChaosTarget>("/v1/chaos/inject", {
+      method: "POST",
+      body: JSON.stringify({ action, service }),
+    }),
 };
 
 // --------------------------------------------------------------------------- //

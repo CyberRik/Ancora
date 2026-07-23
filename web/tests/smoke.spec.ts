@@ -42,3 +42,11 @@ test("node catalog renders without an API", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Node catalog" })).toBeVisible();
   await expect(page.locator("body")).toBeVisible();
 });
+
+test("chaos lab renders without an API", async ({ page }) => {
+  await page.goto("/chaos");
+  await expect(page.getByRole("heading", { name: "Chaos Lab" })).toBeVisible();
+  // The kill buttons only appear once the API reports live targets, so with no
+  // API the page must still render its explanation rather than an empty shell.
+  await expect(page.getByText(/Give it something to lose/i)).toBeVisible();
+});

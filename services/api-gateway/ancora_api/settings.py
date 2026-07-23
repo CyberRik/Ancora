@@ -20,6 +20,14 @@ class Settings(CommonSettings):
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
+    # Chaos injection (kill a worker from the UI). Off unless explicitly enabled:
+    # it requires the Docker socket, which lets this process control its host's
+    # containers. The local compose stack turns it on; nothing else should.
+    chaos_enabled: bool = Field(default=False)
+    docker_socket: str = Field(default="/var/run/docker.sock")
+    # Compose project name, so injections can never reach another stack's containers.
+    compose_project: str = Field(default="ancora")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

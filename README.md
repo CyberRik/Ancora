@@ -79,6 +79,8 @@ Then open:
 | Dashboard | http://localhost:3000 |
 | API health | http://localhost:8080/healthz |
 | API version | http://localhost:8080/v1/version |
+| Chaos Lab | http://localhost:3000/chaos |
+| Approvals | http://localhost:3000/approvals |
 | Scheduler state | http://localhost:8090/v1/scheduler/state |
 | Scheduler metrics | http://localhost:8090/metrics |
 | Temporal UI | http://localhost:8233 |
@@ -137,6 +139,58 @@ docker compose -f deploy/docker/docker-compose.yml --profile ray up --build
 
 Without the `ray` profile, activity workers use the in-process local backend — no
 Ray required for dev or CI.
+
+### Kill a worker (the whole point)
+
+The easiest way is the **Chaos Lab** in the dashboard
+([localhost:3000/chaos](http://localhost:3000/chaos)): start a run, press
+`SIGKILL` on a worker, watch the run finish anyway, press `Restart`. The kill is
+real — the API asks the Docker daemon to `SIGKILL` the container, so the worker
+gets no chance to drain or acknowledge.
+
+> Chaos injection needs the Docker socket, which lets the API control this host's
+> containers. It is therefore **off unless `ANCORA_CHAOS_ENABLED=true`**, which
+> the local compose stack sets and nothing else should. Even then it is scoped to
+> this Compose project and an allow-list of worker services — it cannot touch
+> Postgres, Temporal, or another stack.
+
+From the terminal:
+
+```bash
+C="docker compose -f deploy/docker/docker-compose.yml"
+
+# 1. start a run that does real work and then parks at a human gate
+curl -s -X POST localhost:8080/v1/workflows/research_agent/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"input":{"topic":"durable execution","summaries":2}}'
+
+# 2. SIGKILL a worker mid-flight — no drain, no warning
+$C kill activity-worker      # the one running nodes
+$C kill worker               # the one running workflow code
+$C kill worker activity-worker   # or both at once
+
+# 3. the run does not fail. Watch it stay Running with nothing alive to serve it:
+curl -s localhost:8080/v1/runs/<run-id> | jq .status
+
+# 4. bring the worker back — it picks the run up from history
+$C start activity-worker worker
+```
+
+Two things to know when you try this:
+
+- **A manually killed container does not come back on its own.** Docker treats
+  `kill`/`stop` as intentional, so `restart: on-failure` does not fire — you
+  restart it with `$C start`. (A worker that *crashes* on its own does restart.)
+- **Resume is not always instant.** Work that had already completed is replayed
+  from history immediately and never re-executed. But an activity that was
+  *in flight* when the process died is only rescheduled once its
+  `start_to_close_timeout` elapses — Temporal cannot tell a dead worker from a
+  slow one any sooner. LLM nodes allow 5 minutes per attempt, so an unlucky kill
+  looks idle for a while before it retries. Heartbeats are what shrink that
+  window, which is why long-running nodes declare one.
+
+Verify no work was duplicated afterwards with
+`GET /v1/runs/{id}/cost` — one ledger line per node that actually executed.
 
 ### Tuning admission control
 

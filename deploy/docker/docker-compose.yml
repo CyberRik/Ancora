@@ -96,6 +96,11 @@ services:
       - ANCORA_TASK_QUEUE=ancora-default
       - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_CORS_ORIGINS=["http://localhost:3000"]
+      # Chaos Lab: lets the dashboard SIGKILL a worker container. Enabled here
+      # (local dev/demo stack) and nowhere else — it requires the Docker socket
+      # below, which grants control over this host's containers.
+      - ANCORA_CHAOS_ENABLED=true
+      - ANCORA_COMPOSE_PROJECT=ancora
       # Poll for changes: Docker Desktop bind mounts don't deliver inotify events.
       - WATCHFILES_FORCE_POLLING=true
     ports:
@@ -104,6 +109,13 @@ services:
       - ../../services/api-gateway:/app/services/api-gateway
       - ../../packages/sdk-python:/app/packages/sdk-python
       - ../../packages/common:/app/packages/common
+      # Read-write because killing a container is a write. Scoped at the app
+      # layer to this Compose project and an allow-list of worker services.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The socket is root:root 0660, and the image runs as the unprivileged
+    # `ancora` user. Joining group 0 grants access to the socket without running
+    # the API as uid 0 — the smallest grant that makes the Chaos Lab work.
+    group_add: ["0"]
     # Hot reload: watch the service *and* the shared packages so edits to
     # ancora_common / the SDK also restart the server.
     command: [

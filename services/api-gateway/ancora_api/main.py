@@ -17,6 +17,8 @@ Endpoints:
   GET  /v1/approvals                   human-approval inbox
   POST /v1/approvals/{id}/decision     approve/reject (signals the workflow)
   GET  /v1/plugins                     node-type catalog with JSON schemas
+  GET  /v1/chaos                       killable targets + injection history
+  POST /v1/chaos/inject                kill (SIGKILL) or restart a worker
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from pydantic import BaseModel
 from ancora_api import __version__
 from ancora_api.approval_service import ApprovalNotFoundError
 from ancora_api.idempotency import IdempotencyMiddleware
-from ancora_api.routers import approvals, plugins, runs, workers, workflows
+from ancora_api.routers import approvals, chaos, plugins, runs, workers, workflows
 from ancora_api.service import NotFoundError
 from ancora_api.settings import get_settings
 from ancora_common import db
@@ -134,6 +136,7 @@ def create_app() -> FastAPI:
     app.include_router(workers.router)
     app.include_router(approvals.router)
     app.include_router(plugins.router)
+    app.include_router(chaos.router)
     return app
 
 

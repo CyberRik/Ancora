@@ -193,6 +193,38 @@ class ApprovalDecisionIn(BaseModel):
 # --------------------------------------------------------------------------- #
 # Node catalog (Phase 3, AN-058) — the built-ins today, plugins in Phase 5.
 # --------------------------------------------------------------------------- #
+class ChaosTargetOut(BaseModel):
+    """A container the Chaos Lab may act on."""
+
+    service: str
+    name: str
+    state: str
+    killable: bool
+
+
+class ChaosInjectRequest(BaseModel):
+    # "kill" (SIGKILL, no drain) or "restart".
+    action: str = "kill"
+    service: str
+    signal: str = "SIGKILL"
+
+
+class ChaosEventOut(BaseModel):
+    action: str
+    service: str
+    at: float
+    detail: str = ""
+
+
+class ChaosStatusOut(BaseModel):
+    enabled: bool
+    project: str
+    targets: list[ChaosTargetOut] = Field(default_factory=list)
+    events: list[ChaosEventOut] = Field(default_factory=list)
+    # Why chaos is unavailable, when it is.
+    reason: str | None = None
+
+
 class NodeTypeOut(BaseModel):
     type_name: str
     version: str

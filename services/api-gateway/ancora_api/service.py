@@ -35,7 +35,7 @@ from ancora_common.catalog import (
     map_temporal_status,
 )
 from ancora_common.db import session_scope
-from ancora_common.models import WorkflowRun, WorkflowVersion
+from ancora_common.models import ApprovalGate, WorkflowRun, WorkflowVersion
 
 
 class NotFoundError(Exception):
@@ -253,7 +253,19 @@ class WorkflowService:
             try:
                 status_note = await handle.query("current_status")
             except Exception:  # noqa: BLE001 — workflow may not expose the query
-                status_note = None
+                async with session_scope() as session:
+                    gate = (
+                        await session.execute(
+                            select(ApprovalGate).where(
+                                ApprovalGate.temporal_wf_id == wf_id,
+                                ApprovalGate.status == "waiting",
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if gate:
+                        status_note = f"Awaiting human approval (gate_id={gate.gate_id})..."
+                    else:
+                        status_note = None
 
         return RunLiveOut(
             run_id=run_id, status=status, status_note=status_note, activities=activities
