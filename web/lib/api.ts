@@ -320,6 +320,11 @@ async function req<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
 ): Promise<T> {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
+    const { mockReq } = await import("./demo");
+    return mockReq(path, init) as Promise<T>;
+  }
+
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
