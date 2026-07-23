@@ -99,10 +99,10 @@ class _ClassDefaults:
 _DEFAULTS: Final[dict[str, _ClassDefaults]] = {
     # LLM calls are slow, expensive, and fail transiently (429s, provider blips).
     # Retry patiently and for a long time — losing a half-finished chain costs
-    # more than waiting. Capped at 5 minutes per attempt.
+    # more than waiting. Capped at 1 minute per attempt.
     "llm": _ClassDefaults(
         capability=Capability.CPU,
-        start_to_close_seconds=300.0,
+        start_to_close_seconds=60.0,
         retry=RetrySpec(
             initial_seconds=2.0,
             backoff_coefficient=2.0,
