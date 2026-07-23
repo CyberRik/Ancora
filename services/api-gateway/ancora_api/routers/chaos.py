@@ -6,13 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ancora_api.chaos import ChaosDisabledError, ChaosService, ChaosTarget, ChaosTargetError
 from ancora_api.deps import get_chaos_service, get_service
-from ancora_api.service import WorkflowService
 from ancora_api.schemas import (
     ChaosEventOut,
     ChaosInjectRequest,
     ChaosStatusOut,
     ChaosTargetOut,
 )
+from ancora_api.service import WorkflowService
 
 router = APIRouter(prefix="/v1", tags=["chaos"])
 
@@ -69,7 +69,7 @@ async def inject(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot kill worker: no run is currently in progress",
             )
-    
+
     try:
         if req.action == "kill":
             target = await service.kill(req.service, signal=req.signal)

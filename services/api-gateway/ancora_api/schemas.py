@@ -112,6 +112,96 @@ class RunLiveOut(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Recovery view — why a run pauses after a kill, and how it rebuilds
+# --------------------------------------------------------------------------- #
+class RecoverySpanOut(BaseModel):
+    """One attempt of one activity, placed on a time axis.
+
+    ``outcome="lost"`` is the attempt (or attempts) that died with a worker.
+    Temporal never persists the start event of an attempt that fails, so such a
+    span is a *bound*, not a measurement — hence ``approximate``. What is known
+    exactly: it cannot have begun before the activity was scheduled, and it was
+    over by the time the next attempt started.
+    """
+
+    activity_id: str
+    node_id: str
+    activity_type: str
+    attempt: int
+    # Temporal worker identity ("<pid>@<host>"), or None for a lost attempt —
+    # the process died before the server recorded which one it was.
+    worker: str | None = None
+    # completed | failed | timed_out | canceled | running | queued | lost
+    outcome: str
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    failure: str | None = None
+    # How many attempts this span stands in for (>1 only when retries piled up).
+    lost_attempts: int = 0
+    approximate: bool = False
+
+
+class RecoveryMarkerOut(BaseModel):
+    """A discrete fleet event worth drawing as a line across the timeline."""
+
+    at: datetime
+    # kill | restart | worker_changed | workflow_task_timeout
+    kind: str
+    label: str
+    detail: str | None = None
+
+
+class RecoveryWindowOut(BaseModel):
+    """A clock the run is currently waiting on — the reason nothing is moving.
+
+    Three waits are possible after a kill and they are not interchangeable:
+    ``queued`` (nobody is polling the task queue), ``detecting`` (an attempt is
+    held by a process that is gone and the server must wait out the timeout that
+    attempt was granted), and ``backoff`` (the attempt already failed and the
+    retry policy is holding the next one back). Only ``detecting`` is a design
+    decision — its length is whatever ``start_to_close``/``heartbeat`` says.
+    """
+
+    activity_id: str
+    node_id: str
+    # detecting | backoff | queued | workflow_task
+    kind: str
+    # start_to_close | heartbeat | retry_backoff | none
+    clock: str | None = None
+    attempt: int = 1
+    worker: str | None = None
+    # live | replaced | gone | unknown
+    worker_state: str = "unknown"
+    queue: str | None = None
+    queue_has_worker: bool | None = None
+    started_at: datetime | None = None
+    deadline_at: datetime | None = None
+    timeout_seconds: float | None = None
+    elapsed_seconds: float = 0.0
+    remaining_seconds: float | None = None
+    heartbeat_at: datetime | None = None
+    heartbeat_timeout_seconds: float | None = None
+    reason: str = ""
+
+
+class RunRecoveryOut(BaseModel):
+    run_id: uuid.UUID
+    status: str
+    # Server clock, so the UI animates against the same time base as the deadlines.
+    now: datetime
+    # Distinct worker identities that touched this run, in first-seen order.
+    workers: list[str] = Field(default_factory=list)
+    spans: list[RecoverySpanOut] = Field(default_factory=list)
+    markers: list[RecoveryMarkerOut] = Field(default_factory=list)
+    windows: list[RecoveryWindowOut] = Field(default_factory=list)
+    # Recorded activity results a replacement worker rebuilt state from without
+    # re-executing them — the exactly-once claim, as a number.
+    replayed_activities: int = 0
+    # Times the work changed hands between processes.
+    handoffs: int = 0
+
+
+# --------------------------------------------------------------------------- #
 # Cost accounting (Phase 3, AN-056/AN-057)
 # --------------------------------------------------------------------------- #
 class CostLineOut(BaseModel):

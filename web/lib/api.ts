@@ -95,6 +95,73 @@ export interface RunLive {
   activities: RunActivity[];
 }
 
+// --- Recovery view: what a kill did, and what the run is waiting on -------- //
+export type SpanOutcome =
+  | "completed"
+  | "failed"
+  | "timed_out"
+  | "canceled"
+  | "running"
+  | "queued"
+  | "lost";
+
+export interface RecoverySpan {
+  activity_id: string;
+  node_id: string;
+  activity_type: string;
+  attempt: number;
+  /** null for a lost attempt — the process died before the server recorded it. */
+  worker: string | null;
+  outcome: SpanOutcome;
+  started_at: string | null;
+  ended_at: string | null;
+  failure: string | null;
+  lost_attempts: number;
+  /** A reconstructed bound rather than a measurement (see recovery.py). */
+  approximate: boolean;
+}
+
+export interface RecoveryMarker {
+  at: string;
+  kind: string;
+  label: string;
+  detail: string | null;
+}
+
+/** The clock a run is currently waiting on — the reason nothing is moving. */
+export interface RecoveryWindow {
+  activity_id: string;
+  node_id: string;
+  kind: "detecting" | "backoff" | "queued" | "workflow_task";
+  clock: string | null;
+  attempt: number;
+  worker: string | null;
+  worker_state: "live" | "replaced" | "gone" | "unknown";
+  queue: string | null;
+  queue_has_worker: boolean | null;
+  started_at: string | null;
+  deadline_at: string | null;
+  timeout_seconds: number | null;
+  elapsed_seconds: number;
+  remaining_seconds: number | null;
+  heartbeat_at: string | null;
+  heartbeat_timeout_seconds: number | null;
+  reason: string;
+}
+
+export interface RunRecovery {
+  run_id: string;
+  status: RunStatus;
+  /** Server clock: animate deadlines against this, not the browser's. */
+  now: string;
+  workers: string[];
+  spans: RecoverySpan[];
+  markers: RecoveryMarker[];
+  windows: RecoveryWindow[];
+  replayed_activities: number;
+  handoffs: number;
+}
+
 // --- Cost accounting (Phase 3, AN-057) ------------------------------------ //
 export interface CostLine {
   node_id: string;
@@ -233,6 +300,8 @@ export const api = {
     req<Run>(`/v1/runs/${id}`, { signal }),
   getRunActivities: (id: string, signal?: AbortSignal) =>
     req<RunLive>(`/v1/runs/${id}/activities`, { signal }),
+  getRunRecovery: (id: string, signal?: AbortSignal) =>
+    req<RunRecovery>(`/v1/runs/${id}/recovery`, { signal }),
   startRun: (name: string, input: Record<string, unknown>) =>
     req<StartRunResponse>(`/v1/workflows/${name}/runs`, {
       method: "POST",

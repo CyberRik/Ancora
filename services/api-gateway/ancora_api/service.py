@@ -8,6 +8,7 @@ projection. In Phase 1 run status is refreshed by polling Temporal on read
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,10 +18,12 @@ from sqlalchemy.orm import selectinload
 from temporalio.client import Client, WorkflowFailureError
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
+from ancora_api.recovery import FleetLiveness, build_recovery
 from ancora_api.schemas import (
     RunActivityOut,
     RunLiveOut,
     RunOut,
+    RunRecoveryOut,
     StartRunRequest,
     WorkflowDefOut,
 )
@@ -269,6 +272,60 @@ class WorkflowService:
 
         return RunLiveOut(
             run_id=run_id, status=status, status_note=status_note, activities=activities
+        )
+
+    async def get_run_recovery(
+        self,
+        run_id: uuid.UUID,
+        *,
+        chaos_events: Sequence[dict[str, Any]] = (),
+        liveness: FleetLiveness | None = None,
+    ) -> RunRecoveryOut:
+        """Reconstruct what a kill did to this run, and what it is waiting on now.
+
+        This reads the whole history, so it is deliberately a separate endpoint
+        from the live activity poll: the cheap view stays cheap. Phase 4's event
+        consumer replaces the fetch with a projection.
+        """
+        async with session_scope() as session:
+            run = await _load_run(session, run_id)
+            if run is None:
+                raise NotFoundError(f"run '{run_id}' not found")
+            if run.status not in AncoraRunStatus.TERMINAL:
+                await self._refresh(run)
+            status = run.status
+            wf_id = run.temporal_wf_id
+            temporal_run_id = run.temporal_run_id
+
+        handle = self.client.get_workflow_handle(wf_id, run_id=temporal_run_id)
+        events = [e async for e in handle.fetch_history_events()]
+
+        pending_activities: Sequence[Any] = ()
+        pending_task = None
+        task_queue: str | None = None
+        task_timeout: float | None = None
+        try:
+            raw = (await handle.describe()).raw_description
+            pending_activities = list(raw.pending_activities)
+            if raw.HasField("pending_workflow_task"):
+                pending_task = raw.pending_workflow_task
+            config = raw.execution_config
+            task_queue = config.task_queue.name or None
+            if config.HasField("default_workflow_task_timeout"):
+                task_timeout = config.default_workflow_task_timeout.ToTimedelta().total_seconds()
+        except Exception:  # noqa: BLE001 — the historical view stands on its own
+            pass
+
+        return build_recovery(
+            run_id=run_id,
+            status=status,
+            events=events,
+            pending_activities=pending_activities,
+            pending_workflow_task=pending_task,
+            workflow_task_queue=task_queue,
+            workflow_task_timeout=task_timeout,
+            chaos_events=chaos_events,
+            liveness=liveness,
         )
 
     # ---- internal: crude status projection ------------------------------ #

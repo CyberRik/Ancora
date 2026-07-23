@@ -148,6 +148,12 @@ The easiest way is the **Chaos Lab** in the dashboard
 real — the API asks the Docker daemon to `SIGKILL` the container, so the worker
 gets no chance to drain or acknowledge.
 
+The Lab then shows you the recovery as it happens, because the interesting part
+is a *pause* and a pause is easy to misread as a failure. You get a live
+countdown of the clock the run is actually waiting on, and a time axis where the
+attempt that died with its worker is drawn at full width next to the attempt that
+replaced it. The same view is on every run page under **Recovery**.
+
 > Chaos injection needs the Docker socket, which lets the API control this host's
 > containers. It is therefore **off unless `ANCORA_CHAOS_ENABLED=true`**, which
 > the local compose stack sets and nothing else should. Even then it is scoped to
@@ -188,6 +194,14 @@ Two things to know when you try this:
   slow one any sooner. LLM nodes allow 5 minutes per attempt, so an unlucky kill
   looks idle for a while before it retries. Heartbeats are what shrink that
   window, which is why long-running nodes declare one.
+
+`GET /v1/runs/{id}/recovery` is the machine-readable form of the Recovery view:
+every attempt on a time axis, the fleet events around them, and the clock any
+pending work is blocked on. It distinguishes the three waits that look identical
+from outside — `queued` (nobody polling; free, clears instantly), `detecting`
+(an attempt stranded on a process that is gone; costs one timeout), and
+`backoff` (the retry policy holding the next attempt back). Only `detecting` is
+a design decision, and its length is the node's own timeout.
 
 Verify no work was duplicated afterwards with
 `GET /v1/runs/{id}/cost` — one ledger line per node that actually executed.

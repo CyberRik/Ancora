@@ -7,18 +7,27 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, Query, status
 
+from ancora_api.chaos import ChaosService
 from ancora_api.cost_service import CostService
-from ancora_api.deps import get_cost_service, get_service
+from ancora_api.deps import (
+    get_chaos_service,
+    get_cost_service,
+    get_service,
+    get_worker_service,
+)
+from ancora_api.recovery import FleetLiveness
 from ancora_api.schemas import (
     RetryAttemptOut,
     RunCostOut,
     RunLinks,
     RunLiveOut,
     RunOut,
+    RunRecoveryOut,
     StartRunRequest,
     StartRunResponse,
 )
 from ancora_api.service import WorkflowService
+from ancora_api.worker_service import WorkerService
 
 router = APIRouter(prefix="/v1", tags=["runs"])
 
@@ -69,6 +78,29 @@ async def get_run_activities(
 ) -> RunLiveOut:
     """Live per-activity state (real attempt counter + failure) for the demo view."""
     return await service.get_run_live(run_id)
+
+
+@router.get("/runs/{run_id}/recovery", response_model=RunRecoveryOut)
+async def get_run_recovery(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+    chaos: ChaosService = Depends(get_chaos_service),
+    workers: WorkerService = Depends(get_worker_service),
+) -> RunRecoveryOut:
+    """What a worker death did to this run, and which clock it is waiting on.
+
+    Reads the full history, so it is separate from ``/activities`` — the live
+    poll stays cheap. Liveness and the injection log are both best-effort: the
+    timeline is reconstructable from Temporal alone, they only sharpen it.
+    """
+    liveness: FleetLiveness | None = None
+    try:
+        liveness = FleetLiveness.from_workers(await workers.list_workers())
+    except Exception:  # noqa: BLE001 — registry is an overlay, not a dependency
+        liveness = None
+    return await service.get_run_recovery(
+        run_id, chaos_events=chaos.log.recent(), liveness=liveness
+    )
 
 
 @router.get("/runs/{run_id}/cost", response_model=RunCostOut)

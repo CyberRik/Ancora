@@ -21,9 +21,11 @@ import {
   type ChaosStatus,
   type ChaosTarget,
   type Run,
+  type RunRecovery,
   type RunStatus,
 } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
+import { RecoveryTimeline } from "@/components/recovery-timeline";
 import { cn } from "@/lib/utils";
 
 const TERMINAL = new Set<RunStatus>([
@@ -142,7 +144,13 @@ export default function ChaosPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  // The run whose recovery is shown below the kill buttons. Tracked as an id so
+  // it survives the run going terminal — the aftermath is the interesting part.
+  const [watching, setWatching] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<RunRecovery | null>(null);
   const abort = useRef<AbortController | null>(null);
+  const watchingRef = useRef<string | null>(null);
+  watchingRef.current = watching;
 
   const load = useCallback(() => {
     const c = abort.current;
@@ -157,8 +165,23 @@ export default function ChaosPage() {
       });
     api
       .listRuns(c?.signal)
-      .then((r) => setRuns(r.slice(0, 6)))
+      .then((r) => {
+        const recent = r.slice(0, 6);
+        setRuns(recent);
+        // Default to the newest in-flight run: it is the one about to be hit.
+        if (!watchingRef.current) {
+          const victim = recent.find((run) => !TERMINAL.has(run.status));
+          if (victim) setWatching(victim.id);
+        }
+      })
       .catch(() => {});
+    const id = watchingRef.current;
+    if (id) {
+      api
+        .getRunRecovery(id, c?.signal)
+        .then(setRecovery)
+        .catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -189,7 +212,12 @@ export default function ChaosPage() {
     setStarting(true);
     setError(null);
     try {
-      await api.startRun("research_agent", { topic: "chaos engineering", summaries: 3 });
+      const started = await api.startRun("research_agent", {
+        topic: "chaos engineering",
+        summaries: 3,
+      });
+      setWatching(started.run_id);
+      setRecovery(null);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "could not start a run");
@@ -199,6 +227,8 @@ export default function ChaosPage() {
   }
 
   const live = runs.filter((r) => !TERMINAL.has(r.status));
+  const watched = runs.find((r) => r.id === watching) ?? null;
+  const watchedTerminal = watched ? TERMINAL.has(watched.status) : false;
 
   return (
     <div className="space-y-6">
@@ -250,17 +280,33 @@ export default function ChaosPage() {
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             {live.map((r) => (
-              <Link
+              <div
                 key={r.id}
-                href={`/runs/${r.id}`}
-                className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 transition-colors hover:bg-muted/50"
+                className={cn(
+                  "flex items-center gap-2 rounded-lg border bg-card px-3 py-2",
+                  r.id === watching && "border-accent/50 bg-accent/5",
+                )}
               >
-                <Zap className="h-3.5 w-3.5 text-flow" />
-                <span className="min-w-0 flex-1 truncate font-mono text-sm">
-                  {r.workflow_name}
-                </span>
-                <StatusBadge status={r.status} />
-              </Link>
+                <button
+                  onClick={() => {
+                    setWatching(r.id);
+                    setRecovery(null);
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <Zap className="h-3.5 w-3.5 shrink-0 text-flow" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-sm">
+                    {r.workflow_name}
+                  </span>
+                  <StatusBadge status={r.status} />
+                </button>
+                <Link
+                  href={`/runs/${r.id}`}
+                  className="shrink-0 text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  open →
+                </Link>
+              </div>
             ))}
           </div>
         )}
@@ -282,18 +328,49 @@ export default function ChaosPage() {
             A killed container stays down until you restart it: Docker treats a
             manual kill as intentional, so its restart policy does not fire. That
             separation is the point — the <em>run</em> recovers on its own, the
-            host does not. Also expect a pause before work resumes: an activity
-            that was already in flight is only rescheduled once its timeout
-            elapses, because Temporal cannot tell a dead worker from a slow one
-            any sooner.
+            host does not.
           </p>
         )}
       </section>
 
-      {/* Step 3 — the receipt */}
+      {/* Step 3 — the pause, explained while it is happening */}
+      {watched && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-medium">3 · Watch it rebuild</h3>
+            <Link
+              href={`/runs/${watched.id}`}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              {watched.workflow_name} →
+            </Link>
+          </div>
+          {recovery && (recovery.spans.length > 0 || recovery.windows.length > 0) ? (
+            <RecoveryTimeline data={recovery} terminal={watchedTerminal} />
+          ) : (
+            <div className="rounded-lg border border-dashed bg-card/50 p-4 text-sm text-muted-foreground">
+              Nothing has gone wrong yet. Kill a worker above and this fills in:
+              which attempt died with it, which clock has to run down before the
+              server is allowed to reassign the work, and how much of the run a
+              replacement rebuilt from history instead of re-executing.
+            </div>
+          )}
+          <p className="max-w-3xl text-xs text-muted-foreground">
+            The pause after a kill is not the system deciding what to do — it is
+            the system refusing to guess. A worker that stopped answering and a
+            worker that is merely slow are indistinguishable from the server&apos;s
+            side, so it waits out the timeout that attempt was granted rather than
+            risk running a node twice. Work that had already finished is replayed
+            from history instantly; only the attempt that was actually in flight
+            has to wait.
+          </p>
+        </section>
+      )}
+
+      {/* Step 4 — the receipt */}
       {status && status.events.length > 0 && (
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">3 · What you broke</h3>
+          <h3 className="text-sm font-medium">4 · What you broke</h3>
           <div className="rounded-lg border bg-card">
             {status.events.map((e, i) => (
               <div

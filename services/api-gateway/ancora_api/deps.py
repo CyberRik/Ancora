@@ -9,10 +9,16 @@ from ancora_api.chaos import ChaosLog, ChaosService
 from ancora_api.cost_service import CostService
 from ancora_api.service import WorkflowService
 from ancora_api.settings import get_settings
+from ancora_api.worker_service import WorkerService
 
 # Injection history lives in the process: it is a demo aid, not a record. A
 # restarted API forgets it, which is fine — the runs it acted on do not.
 _chaos_log = ChaosLog()
+
+# One Redis client for the process. The recovery view polls liveness every couple
+# of seconds while a demo is running, and a per-request client would churn
+# connections for no benefit.
+_worker_service: WorkerService | None = None
 
 
 def get_service(request: Request) -> WorkflowService:
@@ -44,6 +50,14 @@ def get_approval_service(request: Request) -> ApprovalService:
 def get_cost_service() -> CostService:
     """Cost reads hit only the projections, so they work with Temporal down."""
     return CostService()
+
+
+def get_worker_service() -> WorkerService:
+    """The worker registry read model, shared process-wide (see ``_worker_service``)."""
+    global _worker_service
+    if _worker_service is None:
+        _worker_service = WorkerService(get_settings().redis_url)
+    return _worker_service
 
 
 def get_chaos_service() -> ChaosService:

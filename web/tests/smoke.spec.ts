@@ -49,4 +49,7 @@ test("chaos lab renders without an API", async ({ page }) => {
   // The kill buttons only appear once the API reports live targets, so with no
   // API the page must still render its explanation rather than an empty shell.
   await expect(page.getByText(/Give it something to lose/i)).toBeVisible();
+  // The recovery view is keyed off a run, so with no API it must stay absent
+  // rather than render an empty chart that looks like "nothing went wrong".
+  await expect(page.getByText(/Watch it rebuild/i)).toHaveCount(0);
 });
