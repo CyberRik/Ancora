@@ -316,26 +316,11 @@ export interface NodeType {
   origin: string;
 }
 
-export function isDemoMode(): boolean {
-  if (typeof window === "undefined") {
-    return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-  }
-  const stored = localStorage.getItem("ancora_demo_mode");
-  if (stored !== null) return stored === "true";
-  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-}
-
-export function setDemoMode(enabled: boolean) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("ancora_demo_mode", enabled ? "true" : "false");
-  }
-}
-
 async function req<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal },
 ): Promise<T> {
-  if (isDemoMode()) {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
     const { mockReq } = await import("./demo");
     return mockReq(path, init) as Promise<T>;
   }

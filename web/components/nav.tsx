@@ -45,7 +45,7 @@ export function Nav() {
                       <span
                         aria-hidden
                         className={cn(
-                          "absolute inset-y-0 left-0 my-auto h-4 w-0.5 rounded-r-full transition-colors",
+                          "absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full transition-colors",
                           active ? "bg-flow" : "bg-transparent",
                         )}
                       />

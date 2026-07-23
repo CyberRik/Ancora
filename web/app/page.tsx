@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, CircleAlert, Play, ServerCog, Zap } from "lucide-react";
-import { api, isDemoMode, setDemoMode, type Queue, type Run, type Worker } from "@/lib/api";
+import { api, type Queue, type Run, type Worker } from "@/lib/api";
 import { SystemFlow } from "@/components/system-flow";
 import { ResilienceStory } from "@/components/resilience-story";
 import { StatusBadge } from "@/components/status-badge";
@@ -16,7 +16,6 @@ import {
   Section,
   SkeletonCards,
   Stat,
-  Switch,
 } from "@/components/ui";
 
 interface Snapshot {
@@ -28,29 +27,6 @@ interface Snapshot {
 export default function DashboardPage() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(false);
-  const [demo, setDemo] = useState(false);
-
-  useEffect(() => {
-    setDemo(isDemoMode());
-  }, []);
-
-  const toggleDemo = async (checked: boolean) => {
-    if (checked) {
-      setDemoMode(true);
-      setDemo(true);
-      load();
-    } else {
-      setDemoMode(false);
-      try {
-        await api.health();
-        setDemo(false);
-        load();
-      } catch {
-        setDemoMode(true);
-        alert("Backend is not reachable. Ensure 'docker compose up' is running.");
-      }
-    }
-  };
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -88,33 +64,27 @@ export default function DashboardPage() {
     <div className="space-y-9">
       {/* Hero — the thesis, stated once and not repeated below. */}
       <header className="animate-fade-up">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div className="max-w-2xl">
-            <p className="eyebrow text-flow">Durable execution runtime</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Kill any worker mid-run.
-              <br />
-              The work still finishes.
-            </h2>
-            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              Ancora records every step of a job as it happens, then hands the heavy work to a pool
-              of workers. Kill one halfway through and another resumes from the last recorded step —
-              no lost progress, nothing done twice.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <ButtonLink href="/chaos" variant="primary">
-                <Zap className="h-4 w-4" />
-                Break it yourself
-              </ButtonLink>
-              <ButtonLink href="/demo">
-                Watch a run recover
-                <ArrowRight className="h-4 w-4" />
-              </ButtonLink>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-sm">
-            <span className="text-sm font-medium text-foreground">Demo Mode</span>
-            <Switch checked={demo} onCheckedChange={toggleDemo} />
+        <div className="max-w-2xl">
+          <p className="eyebrow text-flow">Durable execution runtime</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            Kill any worker mid-run.
+            <br />
+            The work still finishes.
+          </h2>
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            Ancora records every step of a job as it happens, then hands the heavy work to a pool
+            of workers. Kill one halfway through and another resumes from the last recorded step —
+            no lost progress, nothing done twice.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <ButtonLink href="/chaos" variant="primary">
+              <Zap className="h-4 w-4" />
+              Break it yourself
+            </ButtonLink>
+            <ButtonLink href="/demo">
+              Watch a run recover
+              <ArrowRight className="h-4 w-4" />
+            </ButtonLink>
           </div>
         </div>
         <div aria-hidden className="rule-tape rule-tape--fade rule-tape--live mt-7" />
