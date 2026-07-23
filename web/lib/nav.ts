@@ -9,7 +9,6 @@ import {
   ShieldAlert,
   Stamp,
   Zap,
-  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -53,7 +52,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/workflows", label: "Workflows", icon: GitBranch, blurb: "Registered definitions" },
       { href: "/nodes", label: "Nodes", icon: Box, blurb: "The built-in node library" },
       { href: "/workers", label: "Workers", icon: ServerCog, blurb: "Fleet and queues" },
-      { href: "/api-docs", label: "API Docs", icon: BookOpen, blurb: "Backend API documentation" },
       { href: "/history", label: "History", icon: Activity, blurb: "Event timeline" },
       { href: "/health", label: "Health", icon: HeartPulse, blurb: "Control-plane checks" },
     ],
