@@ -21,8 +21,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from temporalio.client import Client
+from temporalio.service import RPCError
 
 from ancora_api.schemas import ApprovalDecisionIn, ApprovalOut
 from ancora_common.db import session_scope
@@ -89,8 +91,6 @@ class ApprovalService:
         # The signal is the decision. If this raises, nothing is marked decided —
         # an inbox row that says "approved" for a workflow that never heard the
         # signal would be a lie the UI has no way to detect.
-        from temporalio.service import RPCError
-        from fastapi import HTTPException
 
         handle = self.client.get_workflow_handle(wf_id)
         try:
@@ -113,7 +113,7 @@ class ApprovalService:
                 raise HTTPException(
                     status_code=400,
                     detail="Workflow has already completed or expired and cannot accept a decision.",
-                )
+                ) from e
             raise
 
         async with session_scope() as session:
