@@ -21,7 +21,7 @@ class GeminiProvider(LLMProvider):
         import httpx
 
         if not self.api_key:
-            raise NodeError("GEMINI_API_KEY is missing", transient=False)
+            raise NodeError("GEMINI_API_KEY is missing", transient=True)
 
         # Default to a valid Gemini model if a mock model name was used
         model = req.model

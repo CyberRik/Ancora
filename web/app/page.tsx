@@ -97,7 +97,7 @@ export default function DashboardPage() {
           title="Not connected to the control plane"
         >
           Nothing below is live yet. Start the stack with{" "}
-          <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">make up</code>,
+          <code className="rounded bg-muted px-1 font-mono text-xs text-foreground">docker compose -f deploy/docker/docker-compose.yml up</code>,
           and this page fills in on its own.
         </Alert>
       )}

@@ -22,3 +22,6 @@ RUNS_SETTLED = REGISTRY.counter(
 RECONCILE_PASSES = REGISTRY.counter(
     "ancora_consumer_reconcile_passes_total", "Reconciler passes completed."
 )
+WORKERS_REAPED = REGISTRY.counter(
+    "ancora_consumer_workers_reaped_total", "Stale worker registry rows deleted."
+)

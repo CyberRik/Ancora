@@ -25,8 +25,9 @@ from ancora_common.catalog import AncoraRunStatus, map_temporal_status
 from ancora_common.db import session_scope
 from ancora_common.events import EventBus, EventKind, RunEvent
 from ancora_common.models import WorkflowRun
+from ancora_common.registry import reap_stale_workers
 from ancora_event_consumer._util import sleep_or_stop
-from ancora_event_consumer.metrics import RECONCILE_PASSES, RUNS_SETTLED
+from ancora_event_consumer.metrics import RECONCILE_PASSES, RUNS_SETTLED, WORKERS_REAPED
 from ancora_event_consumer.settings import ConsumerSettings
 
 logger = logging.getLogger("ancora.consumer.reconciler")
@@ -123,4 +124,18 @@ class Reconciler:
                     logger.info("reconciled %d run(s) to terminal", settled)
             except Exception as exc:  # noqa: BLE001 — keep the loop alive across hiccups
                 logger.warning("reconcile pass failed (retrying): %s", exc)
+            await self._reap_workers()
             await sleep_or_stop(stop, self._settings.reconcile_interval_seconds)
+
+    async def _reap_workers(self) -> None:
+        """Delete worker rows whose heartbeat has gone cold (killed, never drained)."""
+        try:
+            async with session_scope() as session:
+                reaped = await reap_stale_workers(
+                    session, older_than_seconds=self._settings.worker_reap_after_seconds
+                )
+            if reaped:
+                WORKERS_REAPED.inc(reaped)
+                logger.info("reaped %d stale worker row(s)", reaped)
+        except Exception as exc:  # noqa: BLE001 — housekeeping must not kill the loop
+            logger.warning("worker reap failed (retrying next pass): %s", exc)

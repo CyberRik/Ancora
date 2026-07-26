@@ -454,6 +454,55 @@ class ChaosStatusOut(BaseModel):
     reason: str | None = None
 
 
+# --------------------------------------------------------------------------- #
+# Chaos experiments (Phase 5, RFC-0010) — chaos that asserts
+# --------------------------------------------------------------------------- #
+class ChaosScenarioOut(BaseModel):
+    """A named, repeatable fault-injection experiment and what it must not break."""
+
+    name: str
+    title: str
+    description: str
+    # The workflow the scenario exercises, and the fault it injects.
+    workflow: str
+    fault: str
+    # The invariants asserted after recovery (by name), and a recovery-time target.
+    invariants: list[str] = Field(default_factory=list)
+    expected_rto_seconds: float | None = None
+
+
+class InvariantResultOut(BaseModel):
+    name: str
+    description: str
+    passed: bool
+    detail: str
+
+
+class ChaosExperimentResultOut(BaseModel):
+    """The verdict of running a scenario: measured recovery + invariant assertions."""
+
+    scenario: str
+    run_id: uuid.UUID
+    # True only if every invariant held.
+    passed: bool
+    # Recovery time actually measured, and the scenario's target for comparison.
+    rto_seconds: float | None = None
+    expected_rto_seconds: float | None = None
+    invariants: list[InvariantResultOut] = Field(default_factory=list)
+    killed: str | None = None
+    final_status: str
+    note: str | None = None
+
+
+class ChaosExperimentsOut(BaseModel):
+    """The scenario catalog plus the most recent verdicts."""
+
+    enabled: bool
+    scenarios: list[ChaosScenarioOut] = Field(default_factory=list)
+    recent: list[ChaosExperimentResultOut] = Field(default_factory=list)
+    reason: str | None = None
+
+
 class NodeTypeOut(BaseModel):
     type_name: str
     version: str

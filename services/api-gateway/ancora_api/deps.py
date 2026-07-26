@@ -6,6 +6,7 @@ from fastapi import HTTPException, Request, status
 
 from ancora_api.approval_service import ApprovalService
 from ancora_api.chaos import ChaosLog, ChaosService
+from ancora_api.chaos_experiments import ExperimentLog
 from ancora_api.cost_service import CostService
 from ancora_api.service import WorkflowService
 from ancora_api.settings import get_settings
@@ -14,6 +15,14 @@ from ancora_api.worker_service import WorkerService
 # Injection history lives in the process: it is a demo aid, not a record. A
 # restarted API forgets it, which is fine — the runs it acted on do not.
 _chaos_log = ChaosLog()
+
+# Chaos experiment verdicts, likewise in-memory (a demo/regression aid).
+_experiment_log = ExperimentLog()
+
+
+def get_experiment_log() -> ExperimentLog:
+    return _experiment_log
+
 
 # One Redis client for the process. The recovery view polls liveness every couple
 # of seconds while a demo is running, and a per-request client would churn

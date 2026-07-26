@@ -16,11 +16,11 @@ falls back to the DB ``last_heartbeat_at`` timestamp).
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import redis.asyncio as aioredis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,6 +90,32 @@ async def deregister_worker(session: AsyncSession, worker_id: str) -> None:
 async def list_workers(session: AsyncSession) -> list[Worker]:
     result = await session.execute(select(Worker).order_by(Worker.worker_id))
     return list(result.scalars().all())
+
+
+async def reap_stale_workers(session: AsyncSession, *, older_than_seconds: float) -> int:
+    """Delete registration rows whose heartbeat has gone cold. Returns the count.
+
+    A worker refreshes ``last_heartbeat_at`` every heartbeat (~5s), but a SIGKILL
+    skips the graceful ``deregister`` — so a killed worker leaves an orphan row
+    that never clears and makes the fleet look larger than it is. This reaps rows
+    that have not heartbeat within ``older_than_seconds``, which a live worker
+    never will. The grace window is generous (many heartbeat intervals) so a
+    briefly-paused worker is never mistaken for a dead one, and it deliberately
+    outlasts the ``stale`` display window, so a killed worker is still *visible* as
+    stale for a while (the chaos demo's point) before it is cleaned up.
+
+    Rows with a null heartbeat are left alone — they have never been seen alive,
+    which is a registration race, not a death.
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
+    result = await session.execute(
+        delete(Worker).where(
+            Worker.last_heartbeat_at.is_not(None),
+            Worker.last_heartbeat_at < cutoff,
+        )
+    )
+    reaped: int = getattr(result, "rowcount", 0) or 0
+    return reaped
 
 
 # --------------------------------------------------------------------------- #

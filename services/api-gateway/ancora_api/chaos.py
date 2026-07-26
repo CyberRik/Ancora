@@ -154,22 +154,39 @@ class ChaosService:
             )
         return sorted(targets, key=lambda t: t.service)
 
-    async def _resolve(self, service: str) -> ChaosTarget:
+    async def _resolve(self, service: str, *, prefer_running: bool | None = None) -> ChaosTarget:
+        """Pick a container for ``service``.
+
+        A service can have several containers once it is scaled to replicas, so a
+        kill must land on one that is *running* (and a restart on one that is not)
+        — otherwise a second kill would hit an already-dead replica. ``prefer_running``
+        biases the choice; it falls back to any container so single-instance
+        services and error reporting still work.
+        """
         if service not in KILLABLE_SERVICES:
             raise ChaosTargetError(
                 f"'{service}' is not a chaos target; allowed: {', '.join(sorted(KILLABLE_SERVICES))}"
             )
-        for target in await self.list_targets():
-            if target.service == service:
-                return target
-        raise ChaosTargetError(
-            f"no container found for service '{service}' in project '{self.project}'"
-        )
+        matches = [t for t in await self.list_targets() if t.service == service]
+        if not matches:
+            raise ChaosTargetError(
+                f"no container found for service '{service}' in project '{self.project}'"
+            )
+        if prefer_running is not None:
+            preferred = [t for t in matches if (t.state == "running") == prefer_running]
+            if preferred:
+                return preferred[0]
+        return matches[0]
 
     async def kill(self, service: str, *, signal: str = "SIGKILL") -> ChaosTarget:
-        """Kill a worker container outright. No drain, no goodbye."""
+        """Kill a worker container outright. No drain, no goodbye.
+
+        With replicas, this takes down one *running* replica per call, so you can
+        thin the fleet and watch failover — until the last kill leaves nothing
+        polling the queue.
+        """
         self._require_enabled()
-        target = await self._resolve(service)
+        target = await self._resolve(service, prefer_running=True)
         if not target.killable:
             raise ChaosTargetError(
                 f"'{service}' cannot be killed from the UI — it serves this request"
@@ -202,7 +219,9 @@ class ChaosService:
         show: the *run* recovers by itself, the *host* does not.
         """
         self._require_enabled()
-        target = await self._resolve(service)
+        # Bring back a container that is actually down (a killed replica), not one
+        # of its still-running siblings.
+        target = await self._resolve(service, prefer_running=False)
         async with self._client() as client:
             resp = await client.post(f"/containers/{target.container_id}/start")
             # 304 = already running, which is a no-op, not an error.

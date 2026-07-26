@@ -380,6 +380,11 @@ class WorkflowService:
             has_pending_workflow_task=ex.pending_workflow_task is not None,
         )
 
+    async def get_run_execution(self, run_id: uuid.UUID) -> tuple[list[HistoryEvent], str, str]:
+        """Raw Temporal history + status + workflow id for a run (chaos invariants)."""
+        ex = await self._read_execution(run_id)
+        return ex.events, ex.status, ex.temporal_wf_id
+
     async def get_run_history(self, run_id: uuid.UUID) -> RunHistoryOut:
         """The run's projected event log, oldest first (Phase 4d).
 

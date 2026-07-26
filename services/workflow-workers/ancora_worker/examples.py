@@ -156,7 +156,7 @@ class ResearchAgentWorkflow(Workflow):
         n = int(params.get("summaries", 3))
         cpu_q = queue_for(Capability.CPU)
         io_q = queue_for(Capability.IO)
-        providers = ["gemini"]
+        providers = ["gemini", "mock"]
 
         def llm_input(prompt: str) -> dict[str, Any]:
             return {

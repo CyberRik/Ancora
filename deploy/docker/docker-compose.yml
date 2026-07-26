@@ -234,6 +234,13 @@ services:
       "/app/services/activity-workers", "/app/packages",
     ]
     restart: on-failure
+    # Run a pool, not a single worker: fault tolerance is redundancy. Kill one
+    # replica from the Chaos Lab and a survivor picks up the in-flight activity
+    # after the timeout — automatic failover, no manual restart. (Kill *all* of
+    # them to see the run park until capacity returns.) Each replica gets a
+    # distinct hostname, so its worker_id and Temporal identity are unique.
+    deploy:
+      replicas: 3
 
   # Optional Ray head (AN-025). Off by default to keep `make up` light and
   # reliable; start it with:  docker compose --profile ray up

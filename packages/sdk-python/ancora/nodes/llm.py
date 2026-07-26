@@ -91,6 +91,10 @@ class MockProvider(LLMProvider):
     Produces a stable, echoing completion so tests can assert on output. Can be
     told to fail the first ``fail_times`` calls (transiently) to exercise the
     retry/fallback paths.
+
+    Set ``latency_seconds`` to a positive value for human-watchable pacing in
+    demo and chaos-lab scenarios (mirrors the ``_INGEST_SECONDS`` pattern in the
+    data-pipeline demo).  Tests leave it at the default ``0.0``.
     """
 
     def __init__(
@@ -100,14 +104,18 @@ class MockProvider(LLMProvider):
         price_per_1k: float = 0.001,
         fail_times: int = 0,
         transient: bool = True,
+        latency_seconds: float = 0.0,
     ) -> None:
         self.name = name
         self._price_per_1k = price_per_1k
         self._fail_times = fail_times
         self._transient = transient
+        self._latency_seconds = latency_seconds
         self.calls = 0
 
     async def complete(self, req: LLMRequest) -> LLMResponse:
+        import asyncio
+
         self.calls += 1
         if self.calls <= self._fail_times:
             raise NodeError(
@@ -115,6 +123,9 @@ class MockProvider(LLMProvider):
                 transient=self._transient,
                 retry_after=0.0,
             )
+        # Simulate realistic API latency so demo runs are perceivable in the UI.
+        if self._latency_seconds > 0:
+            await asyncio.sleep(self._latency_seconds)
         prompt = " ".join(m.content for m in req.messages if m.role != "system")
         text = f"[{self.name}:{req.model}] {prompt.strip()}"[: 40 + req.max_tokens]
         it = sum(_tokens(m.content) for m in req.messages)

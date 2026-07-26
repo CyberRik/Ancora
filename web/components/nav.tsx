@@ -18,7 +18,7 @@ export function Nav() {
         </span>
         <span className="font-semibold tracking-tight">Ancora</span>
         <span className="ml-auto rounded border border-flow/25 bg-flow/10 px-1.5 py-0.5 font-mono text-[10px] text-flow">
-          v0.4
+          v0.5
         </span>
       </div>
 

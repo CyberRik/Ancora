@@ -215,7 +215,7 @@ export default function ChaosPage() {
     try {
       const started = await api.startRun("research_agent", {
         topic: "chaos engineering",
-        summaries: 3,
+        summaries: 5,
       });
       setWatching(started.run_id);
       setRecovery(null);
@@ -270,8 +270,8 @@ export default function ChaosPage() {
         />
         {live.length === 0 ? (
           <div className="rounded-lg border border-dashed bg-card/40 p-4 text-sm text-muted-foreground">
-            No runs in flight. Start one above — it makes several LLM calls and then parks at a
-            human gate, which gives you a wide window to kill something.
+            No runs in flight. Start one above — each LLM step takes a few seconds, giving
+            you a wide window to kill a worker while work is actively in progress.
           </div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">

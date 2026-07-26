@@ -25,6 +25,12 @@ class ConsumerSettings(CommonSettings):
     # activity interceptor never sees). Kept short so a completed run settles fast.
     reconcile_interval_seconds: float = 8.0
 
+    # Reap worker registry rows whose heartbeat is older than this. A SIGKILLed
+    # worker skips graceful deregistration and would otherwise linger forever,
+    # inflating the fleet view. Generous by default so a killed worker stays
+    # visible as "stale" for a while before it is cleaned up.
+    worker_reap_after_seconds: float = 60.0
+
     # Toggle either half off independently (tests, or running projector-only).
     run_projector: bool = True
     run_reconciler: bool = True

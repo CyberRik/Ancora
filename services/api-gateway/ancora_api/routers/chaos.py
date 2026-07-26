@@ -5,9 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ancora_api.chaos import ChaosDisabledError, ChaosService, ChaosTarget, ChaosTargetError
-from ancora_api.deps import get_chaos_service, get_service
+from ancora_api.chaos_experiments import SCENARIOS, ChaosExperimentRunner, ExperimentLog
+from ancora_api.deps import get_chaos_service, get_experiment_log, get_service
 from ancora_api.schemas import (
     ChaosEventOut,
+    ChaosExperimentResultOut,
+    ChaosExperimentsOut,
     ChaosInjectRequest,
     ChaosStatusOut,
     ChaosTargetOut,
@@ -85,3 +88,49 @@ async def inject(
     except ChaosTargetError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _target_out(target)
+
+
+@router.get("/chaos/experiments", response_model=ChaosExperimentsOut)
+async def list_experiments(
+    service: ChaosService = Depends(get_chaos_service),
+    log: ExperimentLog = Depends(get_experiment_log),
+) -> ChaosExperimentsOut:
+    """The scenario library and recent verdicts — chaos as an *asserting* feature."""
+    if not service.enabled:
+        return ChaosExperimentsOut(
+            enabled=False,
+            scenarios=[s.to_out() for s in SCENARIOS.values()],
+            reason="Chaos injection is disabled; experiments need the Docker socket.",
+        )
+    return ChaosExperimentsOut(
+        enabled=True,
+        scenarios=[s.to_out() for s in SCENARIOS.values()],
+        recent=log.recent(),
+    )
+
+
+@router.post("/chaos/experiments/{name}", response_model=ChaosExperimentResultOut)
+async def run_experiment(
+    name: str,
+    chaos: ChaosService = Depends(get_chaos_service),
+    workflow_service: WorkflowService = Depends(get_service),
+    log: ExperimentLog = Depends(get_experiment_log),
+) -> ChaosExperimentResultOut:
+    """Run a scenario end-to-end: start a run, inject the fault mid-flight, assert.
+
+    Long-running by nature — it waits out the real recovery — but bounded so a
+    wedged run cannot hang the request.
+    """
+    if name not in SCENARIOS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"unknown scenario '{name}'; known: {', '.join(sorted(SCENARIOS))}",
+        )
+    try:
+        chaos._require_enabled()
+    except ChaosDisabledError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+    result = await ChaosExperimentRunner(workflow_service, chaos).run(name)
+    log.record(result)
+    return result

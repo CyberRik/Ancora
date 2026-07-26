@@ -55,10 +55,16 @@ class FakeDocker:
         return FakeResponse(None, 204)
 
 
-def container(service: str, *, project: str = "ancora", state: str = "running") -> dict[str, Any]:
+def container(
+    service: str,
+    *,
+    project: str = "ancora",
+    state: str = "running",
+    replica: int = 1,
+) -> dict[str, Any]:
     return {
-        "Id": f"id-{service}",
-        "Names": [f"/{project}-{service}-1"],
+        "Id": f"id-{service}-{replica}",
+        "Names": [f"/{project}-{service}-{replica}"],
         "State": state,
         "Labels": {
             "com.docker.compose.project": project,
@@ -89,6 +95,38 @@ async def test_disabled_by_default_refuses_everything() -> None:
         await svc.kill("worker")
     with pytest.raises(ChaosDisabledError):
         await svc.restart("worker")
+
+
+# --------------------------------------------------------------------------- #
+# Replica targeting — a scaled service has several containers
+# --------------------------------------------------------------------------- #
+async def test_kill_targets_a_running_replica_not_a_dead_one() -> None:
+    # A pool where replica 1 is already down: a kill must land on a running one,
+    # so repeated kills thin the fleet instead of erroring on a corpse.
+    svc, docker = make_service(
+        [
+            container("activity-worker", state="exited", replica=1),
+            container("activity-worker", state="running", replica=2),
+            container("activity-worker", state="running", replica=3),
+        ]
+    )
+    target = await svc.kill("activity-worker")
+    assert target.state == "running"
+    # The kill hit the resolved (running) container, not the exited replica 1.
+    assert docker.posts[0][0] == f"/containers/{target.container_id}/kill"
+    assert target.container_id != "id-activity-worker-1"
+
+
+async def test_restart_targets_a_stopped_replica_not_a_live_one() -> None:
+    svc, docker = make_service(
+        [
+            container("activity-worker", state="running", replica=1),
+            container("activity-worker", state="exited", replica=2),
+        ]
+    )
+    target = await svc.restart("activity-worker")
+    assert target.state == "exited"
+    assert docker.posts[0][0] == f"/containers/{target.container_id}/start"
 
 
 # --------------------------------------------------------------------------- #
@@ -142,7 +180,7 @@ async def test_kill_sends_sigkill_to_the_right_container() -> None:
 
     assert target.name == "ancora-activity-worker-1"
     path, params = docker.posts[0]
-    assert path == "/containers/id-activity-worker/kill"
+    assert path == "/containers/id-activity-worker-1/kill"
     # No drain, no grace period — the failure mode that makes durability interesting.
     assert params == {"signal": "SIGKILL"}
 
@@ -157,7 +195,7 @@ async def test_killing_an_already_dead_container_is_refused() -> None:
 async def test_restart_starts_the_container_again() -> None:
     svc, docker = make_service([container("worker", state="exited")])
     await svc.restart("worker")
-    assert docker.posts[0][0] == "/containers/id-worker/start"
+    assert docker.posts[0][0] == "/containers/id-worker-1/start"
 
 
 async def test_injections_are_logged_for_the_recovery_timeline() -> None:

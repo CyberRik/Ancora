@@ -47,8 +47,13 @@ logger = logging.getLogger("ancora.runtime.nodes")
 
 # CI/dev default so LLM nodes work without API keys. Real providers are registered
 # at worker startup from configuration.
-register_provider(MockProvider("mock"))
-register_provider(MockProvider("mock-secondary"))
+#
+# Production mocks use deliberate latency so demo runs (chaos lab, research agent)
+# have human-watchable pacing — same philosophy as ``_INGEST_SECONDS`` in the data
+# pipeline demo.  Tests register their own zero-latency mocks.
+_DEMO_LATENCY = 2.5  # seconds per mock LLM call
+register_provider(MockProvider("mock", latency_seconds=_DEMO_LATENCY))
+register_provider(MockProvider("mock-secondary", latency_seconds=_DEMO_LATENCY))
 register_provider(GeminiProvider())
 
 
