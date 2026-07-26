@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { RecoveryTimeline } from "@/components/recovery-timeline";
+import { ChaosExperiments } from "@/components/chaos-experiments";
 import { Alert, Button, Card, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -405,6 +406,10 @@ export default function ChaosPage() {
           </p>
         </section>
       )}
+
+      {/* The asserting version: automated experiments with pass/fail + RTO. */}
+      <div aria-hidden className="rule-tape rule-tape--fade" />
+      <ChaosExperiments />
     </div>
   );
 }

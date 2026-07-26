@@ -90,7 +90,11 @@ SCENARIOS: dict[str, Scenario] = {
         workflow_input={"topic": "chaos experiment"},
         fault_service="activity-worker",
         invariants=("no_lost_state", "no_reexecuted_activities", "exactly_once_effects"),
-        expected_rto_seconds=60.0,
+        # Fast failover: run_node heartbeats, so a killed worker is detected within
+        # the ~6s heartbeat_timeout rather than start_to_close. The end-to-end RTO
+        # varies with *when* the kill lands (a stranded summarize recovers faster
+        # than a kill during the late gate phase), so the SLO target has headroom.
+        expected_rto_seconds=25.0,
         gate=(
             "submit_decision",
             {"gate_id": "publish", "approved": True, "comment": "chaos auto-approve"},

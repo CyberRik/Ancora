@@ -27,6 +27,7 @@ Importing this module registers the built-in nodes and the CI mock LLM provider.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
@@ -44,6 +45,34 @@ from ancora_common import projections
 from ancora_common.tracing import get_tracer
 
 logger = logging.getLogger("ancora.runtime.nodes")
+
+# How often run_node proves it is alive. Must stay well under the node's
+# heartbeat_timeout (see ancora.policy) so a *slow* node never trips it — while a
+# *dead* worker stops heartbeating and is redelivered within the timeout.
+_HEARTBEAT_INTERVAL_SECONDS = 2.0
+
+
+async def _execute_with_heartbeat(awaitable: Any) -> Any:
+    """Run ``awaitable`` while emitting a Temporal heartbeat every few seconds.
+
+    The heartbeat is the fast-failover mechanism: a live worker keeps proving it
+    is alive, so a worker that is *killed* mid-node stops heartbeating and Temporal
+    redelivers the activity to a survivor within the heartbeat_timeout (seconds)
+    rather than at start_to_close (up to a minute). It also keeps a legitimately
+    slow node from being mistaken for a dead one.
+    """
+    task = asyncio.ensure_future(awaitable)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=_HEARTBEAT_INTERVAL_SECONDS)
+            if task in done:
+                return task.result()
+            if activity.in_activity():
+                activity.heartbeat()
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+
 
 # CI/dev default so LLM nodes work without API keys. Real providers are registered
 # at worker startup from configuration.
@@ -147,7 +176,7 @@ async def _execute_node(
             span.set_attribute("ancora.provider", provider)
         if model:
             span.set_attribute("ancora.model", model)
-        output = await node.execute(parsed, ctx)
+        output = await _execute_with_heartbeat(node.execute(parsed, ctx))
     return {
         "output": output.model_dump(mode="json"),
         "cost": ctx.total_cost.model_dump(mode="json"),

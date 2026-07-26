@@ -337,6 +337,43 @@ export interface ChaosStatus {
   reason: string | null;
 }
 
+// --- Chaos experiments (Phase 5) — chaos that asserts --------------------- //
+export interface ChaosScenario {
+  name: string;
+  title: string;
+  description: string;
+  workflow: string;
+  fault: string;
+  invariants: string[];
+  expected_rto_seconds: number | null;
+}
+
+export interface InvariantResult {
+  name: string;
+  description: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ChaosExperimentResult {
+  scenario: string;
+  run_id: string;
+  passed: boolean;
+  rto_seconds: number | null;
+  expected_rto_seconds: number | null;
+  invariants: InvariantResult[];
+  killed: string | null;
+  final_status: string;
+  note: string | null;
+}
+
+export interface ChaosExperiments {
+  enabled: boolean;
+  scenarios: ChaosScenario[];
+  recent: ChaosExperimentResult[];
+  reason: string | null;
+}
+
 // --- Node catalog (Phase 3, AN-058) --------------------------------------- //
 export interface NodeType {
   type_name: string;
@@ -421,6 +458,10 @@ export const api = {
     }),
   listNodeTypes: (signal?: AbortSignal) => req<NodeType[]>("/v1/plugins", { signal }),
   chaosStatus: (signal?: AbortSignal) => req<ChaosStatus>("/v1/chaos", { signal }),
+  chaosExperiments: (signal?: AbortSignal) =>
+    req<ChaosExperiments>("/v1/chaos/experiments", { signal }),
+  runChaosExperiment: (name: string) =>
+    req<ChaosExperimentResult>(`/v1/chaos/experiments/${name}`, { method: "POST" }),
   chaosInject: (action: "kill" | "restart", service: string) =>
     req<ChaosTarget>("/v1/chaos/inject", {
       method: "POST",

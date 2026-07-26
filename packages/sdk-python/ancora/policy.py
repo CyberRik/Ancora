@@ -96,6 +96,12 @@ class _ClassDefaults:
 # --------------------------------------------------------------------------- #
 # The policy table (AN-044). One entry per built-in node class.
 # --------------------------------------------------------------------------- #
+# Liveness heartbeat for I/O-bound nodes: short enough that a killed worker is
+# detected in seconds (not at start_to_close), long enough to clear the ~2s
+# emission interval plus scheduling jitter. CPU-bound ``python`` keeps a longer
+# window because its user code can block the loop between heartbeats.
+_FAST_HEARTBEAT_SECONDS: Final = 6.0
+
 _DEFAULTS: Final[dict[str, _ClassDefaults]] = {
     # LLM calls are slow, expensive, and fail transiently (429s, provider blips).
     # Retry patiently and for a long time — losing a half-finished chain costs
@@ -103,6 +109,12 @@ _DEFAULTS: Final[dict[str, _ClassDefaults]] = {
     "llm": _ClassDefaults(
         capability=Capability.CPU,
         start_to_close_seconds=60.0,
+        # A short heartbeat is what makes failover *fast*: without it a worker that
+        # dies mid-call is only noticed at start_to_close (60s). run_node emits a
+        # heartbeat every couple of seconds, so a lapsed one means the worker is
+        # gone — and Temporal redelivers to a survivor in ~this many seconds, not a
+        # minute. (I/O-bound nodes only; the event loop stays free to heartbeat.)
+        heartbeat_seconds=_FAST_HEARTBEAT_SECONDS,
         retry=RetrySpec(
             initial_seconds=2.0,
             backoff_coefficient=2.0,
@@ -115,6 +127,7 @@ _DEFAULTS: Final[dict[str, _ClassDefaults]] = {
     "http": _ClassDefaults(
         capability=Capability.IO,
         start_to_close_seconds=60.0,
+        heartbeat_seconds=_FAST_HEARTBEAT_SECONDS,
         retry=RetrySpec(
             initial_seconds=1.0,
             backoff_coefficient=2.0,
@@ -127,6 +140,7 @@ _DEFAULTS: Final[dict[str, _ClassDefaults]] = {
     "database": _ClassDefaults(
         capability=Capability.IO,
         start_to_close_seconds=120.0,
+        heartbeat_seconds=_FAST_HEARTBEAT_SECONDS,
         retry=RetrySpec(
             initial_seconds=1.0,
             backoff_coefficient=2.0,
@@ -160,6 +174,7 @@ _DEFAULTS: Final[dict[str, _ClassDefaults]] = {
 _GENERIC: Final = _ClassDefaults(
     capability=Capability.CPU,
     start_to_close_seconds=60.0,
+    heartbeat_seconds=_FAST_HEARTBEAT_SECONDS,
     retry=RetrySpec(),
 )
 

@@ -168,5 +168,13 @@ def test_an_already_passed_deadline_produces_a_zero_window() -> None:
 # Heartbeats
 # --------------------------------------------------------------------------- #
 def test_long_running_python_nodes_heartbeat_so_they_can_be_cancelled() -> None:
+    # CPU-bound user code keeps a longer window (it can block the loop between beats).
     assert resolve_policy("python").heartbeat == timedelta(seconds=30)
-    assert resolve_policy("http").heartbeat is None
+
+
+def test_io_nodes_heartbeat_fast_so_a_killed_worker_is_detected_in_seconds() -> None:
+    # The fast-failover mechanism: a short heartbeat means Temporal notices a dead
+    # worker in seconds, not at start_to_close. run_node emits the beats.
+    assert resolve_policy("llm").heartbeat == timedelta(seconds=6)
+    assert resolve_policy("http").heartbeat == timedelta(seconds=6)
+    assert resolve_policy("database").heartbeat == timedelta(seconds=6)
