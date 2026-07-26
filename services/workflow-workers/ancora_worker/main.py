@@ -10,9 +10,12 @@ import asyncio
 import contextlib
 import logging
 import signal
+import socket
 
 from temporalio.worker import Worker
 
+from ancora_common.event_interceptor import EventInterceptor
+from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
 from ancora_common.temporal import connect
 from ancora_worker.catalog_report import report_catalog
@@ -41,12 +44,20 @@ async def _run() -> None:
         except Exception as exc:  # noqa: BLE001 — catalog is best-effort at boot
             logger.warning("catalog report failed (continuing): %s", exc)
 
+    # Emit activity lifecycle events for the live UI (Phase 4). The interceptor
+    # only wraps activities — a workflow interceptor would write to Redis inside
+    # the deterministic sandbox and break replay; run-level lifecycle is authored
+    # by the event consumer's reconciler instead.
+    bus = EventBus(settings.redis_url)
+    worker_identity = f"{socket.gethostname()}:workflow"
+
     worker = Worker(
         client,
         task_queue=settings.task_queue,
         workflows=WORKFLOWS,
         activities=ALL_ACTIVITIES,
         max_concurrent_activities=settings.max_concurrent_activities,
+        interceptors=[EventInterceptor(bus, worker_identity)],
     )
 
     stop = asyncio.Event()
@@ -61,6 +72,7 @@ async def _run() -> None:
             extra={"task_queue": settings.task_queue, "workflows": len(WORKFLOWS)},
         )
         await stop.wait()
+    await bus.aclose()
     logger.info("worker draining complete; exiting")
 
 

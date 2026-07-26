@@ -78,6 +78,7 @@ mypy_path = [
     "services/workflow-workers",
     "services/activity-workers",
     "services/scheduler",
+    "services/event-consumer",
 ]
 files = [
     "packages/sdk-python/ancora",
@@ -87,6 +88,7 @@ files = [
     "services/workflow-workers/ancora_worker",
     "services/activity-workers/ancora_activity_worker",
     "services/scheduler/ancora_scheduler",
+    "services/event-consumer/ancora_event_consumer",
 ]
 
 [[tool.mypy.overrides]]

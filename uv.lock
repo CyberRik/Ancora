@@ -15,6 +15,7 @@ members = [
     "ancora-api",
     "ancora-cli",
     "ancora-common",
+    "ancora-event-consumer",
     "ancora-monorepo",
     "ancora-scheduler",
     "ancora-worker",
@@ -318,6 +319,33 @@ requires-dist = [
     { name = "redis", specifier = ">=5.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "temporalio", specifier = ">=1.9,<2" },
+]
+
+[[package]]
+name = "ancora-event-consumer"
+version = "0.1.0"
+source = { editable = "services/event-consumer" }
+dependencies = [
+    { name = "ancora-common" },
+    { name = "asyncpg" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "redis" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "temporalio" },
+    { name = "watchfiles" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ancora-common", editable = "packages/common" },
+    { name = "asyncpg", specifier = ">=0.29" },
+    { name = "pydantic", specifier = ">=2.6" },
+    { name = "pydantic-settings", specifier = ">=2.7" },
+    { name = "redis", specifier = ">=5.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "temporalio", specifier = ">=1.7" },
+    { name = "watchfiles", specifier = ">=0.24" },
 ]
 
 [[package]]

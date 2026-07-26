@@ -140,6 +140,8 @@ services:
       - ANCORA_TEMPORAL_ADDRESS=temporal:7233
       - ANCORA_TEMPORAL_NAMESPACE=default
       - ANCORA_TASK_QUEUE=ancora-default
+      # Phase 4: the activity interceptor publishes lifecycle events here.
+      - ANCORA_REDIS_URL=redis://redis:6379/0
       - WATCHFILES_FORCE_POLLING=true
     volumes:
       - ../../services/workflow-workers:/app/services/workflow-workers
@@ -231,6 +233,41 @@ services:
       - "10001:10001"   # ray client
       - "8265:8265"     # ray dashboard
     shm_size: "2gb"
+
+  # Event-sourcing backbone (Phase 4): drains the Redis Streams event bus into
+  # the run_event projection and reconciles run status from Temporal history.
+  # Stateless; the live UI degrades to the API's on-read refresh if it is down.
+  event-consumer:
+    build:
+      context: ../..
+      dockerfile: services/event-consumer/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      - ANCORA_ENVIRONMENT=development
+      - ANCORA_DATABASE_URL=postgresql+asyncpg://ancora:ancora@postgres:5432/ancora
+      - ANCORA_TEMPORAL_ADDRESS=temporal:7233
+      - ANCORA_TEMPORAL_NAMESPACE=default
+      - ANCORA_REDIS_URL=redis://redis:6379/0
+      - ANCORA_LOG_JSON=false
+      - WATCHFILES_FORCE_POLLING=true
+    volumes:
+      - ../../services/event-consumer:/app/services/event-consumer
+      - ../../packages/sdk-python:/app/packages/sdk-python
+      - ../../packages/common:/app/packages/common
+    # Hot reload: restart the consumer when its code or shared packages change.
+    command: [
+      "watchfiles", "--filter", "python", "ancora-event-consumer",
+      "/app/services/event-consumer", "/app/packages",
+    ]
+    restart: on-failure
 
   web:
     build:

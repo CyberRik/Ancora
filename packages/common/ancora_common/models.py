@@ -13,9 +13,11 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -330,3 +332,44 @@ class NodeExecution(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _created_at()
+
+
+# --------------------------------------------------------------------------- #
+# Event-sourced projection (Phase 4)
+# --------------------------------------------------------------------------- #
+class RunEventRow(Base):
+    """Durable log of the live event stream (RFC-0001 §8).
+
+    The event bus (Redis Streams) carries activity lifecycle events for the live
+    UI; the event consumer drains them into this append-only table so the timeline
+    survives a Redis restart and can be replayed after the fact (the history
+    scrubber). **Not the source of truth** — Temporal history is — but authoritative
+    for what the UI reads, and healed by the consumer's reconciler when the live
+    stream drops an event.
+
+    ``stream_id`` is the global Redis stream entry id; it is globally unique and
+    monotonic, so it doubles as the idempotency key that makes at-least-once
+    redelivery a no-op (``ON CONFLICT DO NOTHING``).
+    """
+
+    __tablename__ = "run_event"
+    __table_args__ = (
+        UniqueConstraint("stream_id", name="uq_run_event_stream_id"),
+        Index("ix_run_event_wf_id_id", "temporal_wf_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    stream_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    temporal_wf_id: Mapped[str] = mapped_column(Text, nullable=False)
+    temporal_run_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    node_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    activity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    activity_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    worker_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    event_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    recorded_at: Mapped[datetime] = _created_at()

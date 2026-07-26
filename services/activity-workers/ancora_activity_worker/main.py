@@ -25,6 +25,8 @@ from ancora_activity_worker.ray_bridge import connect_backend
 from ancora_activity_worker.recorder import DbNodeRecorder
 from ancora_activity_worker.registration import WorkerRegistration
 from ancora_activity_worker.settings import ActivityWorkerSettings
+from ancora_common.event_interceptor import EventInterceptor
+from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
 from ancora_common.resources import queue_for
 from ancora_common.scheduler_client import SchedulerClient
@@ -55,12 +57,16 @@ async def _run() -> None:
     # Node execution (run_node) rides the same workers as the Ray dispatch activities.
     all_activities: list[Callable[..., Any]] = [*ACTIVITIES, run_node]
     queues = [queue_for(p) for p in settings.pools]
+    # Emit activity lifecycle events for the live UI (Phase 4).
+    bus = EventBus(settings.redis_url)
+    interceptors = [EventInterceptor(bus, settings.worker_id)]
     workers = [
         Worker(
             client,
             task_queue=q,
             activities=all_activities,
             max_concurrent_activities=settings.max_concurrent_activities,
+            interceptors=interceptors,
         )
         for q in queues
     ]
@@ -88,6 +94,7 @@ async def _run() -> None:
     if registration is not None:
         await registration.stop()
     await scheduler.aclose()
+    await bus.aclose()
     runtime.get_backend().shutdown()
     logger.info("activity worker exited cleanly")
 
