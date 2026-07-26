@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   WORKFLOW_SHAPES,
@@ -12,6 +12,7 @@ import {
   type RunLive,
   type RunRecovery,
 } from "@/lib/api";
+import { useRunStream } from "@/lib/stream";
 import { StatusBadge } from "@/components/status-badge";
 import { RunInspector } from "@/components/run-inspector";
 import { RecoveryTimeline } from "@/components/recovery-timeline";
@@ -66,19 +67,39 @@ export default function RunDetailPage() {
     }
   }, [id]);
 
+  // Coalesce a burst of live events (e.g. a fan-out of three completing at once)
+  // into a single refetch shortly after — the graph endpoint is the authoritative
+  // reconstruction, so we re-read it rather than mutating vertices client-side.
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefetch = useCallback(() => {
+    if (refetchTimer.current) return;
+    refetchTimer.current = setTimeout(() => {
+      refetchTimer.current = null;
+      load();
+    }, 250);
+  }, [load]);
+
+  const isRunning = !!run && !TERMINAL.has(run.status);
+  // Live push: the DAG animates off worker-emitted events. `run` may be null on
+  // the very first render — stream once we know the run and it is still moving.
+  const streamState = useRunStream(id, scheduleRefetch, isRunning);
+
   useEffect(() => {
     load();
+    // Safety net only: the socket carries live updates, but a slow poll catches
+    // the terminal transition if the stream is ever down (Redis blip, no consumer).
     const poll = setInterval(() => {
       setRun((cur) => {
         if (cur && TERMINAL.has(cur.status)) return cur;
         load();
         return cur;
       });
-    }, 1500);
+    }, 5000);
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);
       clearInterval(clock);
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
     };
   }, [load]);
 
@@ -158,6 +179,15 @@ export default function RunDetailPage() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            {isRunning && streamState === "open" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-flow/40 bg-flow/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-flow">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-flow opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-flow" />
+                </span>
+                Live
+              </span>
+            )}
             <StatusBadge status={run.status} />
             {!isTerminal && (
               <button

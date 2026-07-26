@@ -35,10 +35,11 @@ from pydantic import BaseModel
 from ancora_api import __version__
 from ancora_api.approval_service import ApprovalNotFoundError
 from ancora_api.idempotency import IdempotencyMiddleware
-from ancora_api.routers import approvals, chaos, plugins, runs, workers, workflows
+from ancora_api.routers import approvals, chaos, plugins, runs, stream, workers, workflows
 from ancora_api.service import NotFoundError
 from ancora_api.settings import get_settings
 from ancora_common import db
+from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
 from ancora_common.temporal import connect
 
@@ -76,7 +77,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.temporal_client = None
         logger.warning("Temporal not connected at startup: %s", exc)
 
+    # One event bus per process; WebSocket streams tail per-run Redis streams
+    # through it. Publishing is not done here (workers publish), only reading.
+    app.state.event_bus = EventBus(settings.redis_url)
+
     yield
+    await app.state.event_bus.aclose()
     await db.dispose_engine()
     logger.info("api-gateway stopped")
 
@@ -137,6 +143,7 @@ def create_app() -> FastAPI:
     app.include_router(approvals.router)
     app.include_router(plugins.router)
     app.include_router(chaos.router)
+    app.include_router(stream.router)
     return app
 
 
