@@ -107,7 +107,9 @@ class ApprovalService:
             if "workflow execution already completed" in str(e):
                 async with session_scope() as session:
                     gate = (
-                        await session.execute(select(ApprovalGate).where(ApprovalGate.id == gate_pk))
+                        await session.execute(
+                            select(ApprovalGate).where(ApprovalGate.id == gate_pk)
+                        )
                     ).scalar_one()
                     gate.status = "expired"
                 raise HTTPException(
