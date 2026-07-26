@@ -89,16 +89,32 @@ class ApprovalService:
         # The signal is the decision. If this raises, nothing is marked decided —
         # an inbox row that says "approved" for a workflow that never heard the
         # signal would be a lie the UI has no way to detect.
+        from temporalio.service import RPCError
+        from fastapi import HTTPException
+
         handle = self.client.get_workflow_handle(wf_id)
-        await handle.signal(
-            "submit_decision",
-            {
-                "gate_id": gate_id,
-                "approved": decision.approved,
-                "comment": decision.comment,
-                "decided_by": decision.decided_by,
-            },
-        )
+        try:
+            await handle.signal(
+                "submit_decision",
+                {
+                    "gate_id": gate_id,
+                    "approved": decision.approved,
+                    "comment": decision.comment,
+                    "decided_by": decision.decided_by,
+                },
+            )
+        except RPCError as e:
+            if "workflow execution already completed" in str(e):
+                async with session_scope() as session:
+                    gate = (
+                        await session.execute(select(ApprovalGate).where(ApprovalGate.id == gate_pk))
+                    ).scalar_one()
+                    gate.status = "expired"
+                raise HTTPException(
+                    status_code=400,
+                    detail="Workflow has already completed or expired and cannot accept a decision.",
+                )
+            raise
 
         async with session_scope() as session:
             gate = (
