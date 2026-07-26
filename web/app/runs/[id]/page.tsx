@@ -6,18 +6,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   WORKFLOW_SHAPES,
+  type GraphNodeState,
   type Run,
   type WorkflowStep,
   type RunGraph,
   type RunLive,
   type RunRecovery,
+  type RunReplay,
 } from "@/lib/api";
 import { useRunStream } from "@/lib/stream";
 import { StatusBadge } from "@/components/status-badge";
 import { RunInspector } from "@/components/run-inspector";
 import { RecoveryTimeline } from "@/components/recovery-timeline";
 import { RunDag } from "@/components/run-dag";
-import { ArrowLeft, Zap } from "lucide-react";
+import { HistoryScrubber } from "@/components/history-scrubber";
+import { ArrowLeft, CheckCircle2, ShieldAlert, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TERMINAL = new Set([
@@ -48,6 +51,10 @@ export default function RunDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
+  // History scrubber: node states at the scrubbed instant, or null for live.
+  const [scrub, setScrub] = useState<Record<string, GraphNodeState> | null>(null);
+  const [replay, setReplay] = useState<RunReplay | null>(null);
+  const [replaying, setReplaying] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -245,7 +252,28 @@ export default function RunDetailPage() {
 
       {/* The DAG this run executed, from history. Supersedes the declared shape
           below as soon as the workflow has scheduled anything real. */}
-      <RunDag data={graph} />
+      <RunDag data={graph} override={scrub} />
+
+      {/* Scrub the recorded event log; the DAG above replays through history. */}
+      {hasGraph && <HistoryScrubber runId={run.id} onScrub={setScrub} />}
+
+      {/* Determinism replay — the durability guarantee, made checkable. */}
+      {isTerminal && hasGraph && (
+        <ReplayCard
+          replay={replay}
+          busy={replaying}
+          onReplay={async () => {
+            setReplaying(true);
+            try {
+              setReplay(await api.replayRun(run.id));
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "replay failed");
+            } finally {
+              setReplaying(false);
+            }
+          }}
+        />
+      )}
 
       {/* Declared shape — what this workflow is *meant* to do. Only shown before
           the run has committed to any work, when there is no graph to draw. */}
@@ -561,5 +589,65 @@ function Payload({
         {data ? JSON.stringify(data, null, 2) : "—"}
       </pre>
     </div>
+  );
+}
+
+function ReplayCard({
+  replay,
+  busy,
+  onReplay,
+}: {
+  replay: RunReplay | null;
+  busy: boolean;
+  onReplay: () => void;
+}) {
+  return (
+    <section className="rounded-xl border bg-card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium">Deterministic replay</h3>
+          <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+            Feed this run&apos;s recorded history back through the current workflow code.
+            If every decision still lands the same way, the run would resume cleanly
+            after any worker death — that is the durability guarantee, checked.
+          </p>
+        </div>
+        <button
+          onClick={onReplay}
+          disabled={busy}
+          className="shrink-0 rounded-md border bg-elevated px-3 py-1.5 text-sm transition-colors hover:border-border-strong disabled:opacity-50"
+        >
+          {busy ? "Replaying…" : "Verify replay"}
+        </button>
+      </div>
+      {replay && (
+        <div
+          className={cn(
+            "mt-3 flex items-start gap-2 rounded-lg border p-3 text-sm",
+            replay.ok
+              ? "border-success/40 bg-success/5"
+              : "border-danger/40 bg-danger/5",
+          )}
+        >
+          {replay.ok ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
+          ) : (
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+          )}
+          <div className="min-w-0">
+            <p className={cn("font-medium", replay.ok ? "text-success" : "text-danger")}>
+              {replay.ok
+                ? `Determinism holds — ${replay.events_replayed} events replayed cleanly`
+                : "Non-determinism detected"}
+            </p>
+            {replay.detail && (
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-danger">
+                {replay.detail}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

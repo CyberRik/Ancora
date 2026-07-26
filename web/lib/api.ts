@@ -197,6 +197,8 @@ export interface GraphNode {
   decided_by: string | null;
   timed_out: boolean;
   note: string | null;
+  /** On the slowest-per-layer chain that sets the run's wall-clock time. */
+  on_critical_path: boolean;
 }
 
 export interface GraphEdge {
@@ -215,6 +217,38 @@ export interface RunGraph {
   completed: number;
   /** Vertices discovered so far — it grows as the workflow commits to more work. */
   total: number;
+  /** Vertex ids, in layer order, of the slowest branch of each layer. */
+  critical_path: string[];
+  /** Wall-clock seconds along the critical path (null until something finishes). */
+  critical_path_seconds: number | null;
+}
+
+// --- Event history & replay (Phase 4d) ------------------------------------ //
+export interface RunHistoryEvent {
+  seq: number;
+  kind: string;
+  node_id: string | null;
+  activity_id: string | null;
+  activity_type: string | null;
+  attempt: number;
+  worker_id: string | null;
+  status: string | null;
+  error: string | null;
+  at: string;
+}
+
+export interface RunHistory {
+  run_id: string;
+  temporal_wf_id: string;
+  events: RunHistoryEvent[];
+}
+
+export interface RunReplay {
+  run_id: string;
+  workflow_name: string;
+  ok: boolean;
+  events_replayed: number;
+  detail: string | null;
 }
 
 // --- Cost accounting (Phase 3, AN-057) ------------------------------------ //
@@ -355,6 +389,9 @@ export const api = {
     req<RunRecovery>(`/v1/runs/${id}/recovery`, { signal }),
   getRunGraph: (id: string, signal?: AbortSignal) =>
     req<RunGraph>(`/v1/runs/${id}/graph`, { signal }),
+  getRunHistory: (id: string, signal?: AbortSignal) =>
+    req<RunHistory>(`/v1/runs/${id}/history`, { signal }),
+  replayRun: (id: string) => req<RunReplay>(`/v1/runs/${id}/replay`, { method: "POST" }),
   startRun: (name: string, input: Record<string, unknown>) =>
     req<StartRunResponse>(`/v1/workflows/${name}/runs`, {
       method: "POST",

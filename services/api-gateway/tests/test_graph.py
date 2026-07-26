@@ -29,7 +29,7 @@ from temporalio.api.enums.v1 import EventType, PendingActivityState
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.api.workflow.v1 import PendingActivityInfo
 
-from ancora_api.graph import build_graph
+from ancora_api.graph import build_graph, critical_path
 from ancora_api.schemas import GraphNodeOut, RunGraphOut
 
 RUN_ID = uuid.UUID("00000000-0000-0000-0000-0000000000cd")
@@ -743,3 +743,77 @@ def test_a_full_research_agent_run_reconstructs_end_to_end() -> None:
     # Fan-out then fan-in: three edges out of search, three into synthesize.
     synth_id = by_label(graph, "synthesize").id
     assert len([e for e in graph.edges if e.target == synth_id]) == 3
+
+
+# --------------------------------------------------------------------------- #
+# Critical path (Phase 4d)
+# --------------------------------------------------------------------------- #
+def _gn(node_id: str, layer: int, duration: float | None) -> GraphNodeOut:
+    return GraphNodeOut(
+        id=node_id,
+        label=node_id,
+        kind="node",
+        layer=layer,
+        state="completed" if duration is not None else "running",
+        duration_seconds=duration,
+    )
+
+
+def test_critical_path_picks_the_slowest_branch_of_each_layer() -> None:
+    # A fan-out completes only when its slowest member does, so the critical path
+    # runs through that member — not the sum of the whole layer.
+    nodes = [
+        _gn("ingest", 0, 3.0),
+        _gn("sum-a", 1, 2.0),
+        _gn("sum-b", 1, 5.0),  # the bottleneck in the fan-out
+        _gn("sum-c", 1, 1.0),
+        _gn("synth", 2, 4.0),
+    ]
+    path, seconds = critical_path(nodes)
+    assert path == ["ingest", "sum-b", "synth"]
+    assert seconds == 12.0  # 3 + 5 + 4, not 3 + (2+5+1) + 4
+
+
+def test_critical_path_is_none_until_something_is_measured() -> None:
+    # A run with nothing finished has a connected path but no measured time.
+    nodes = [_gn("a", 0, None), _gn("b", 1, None)]
+    path, seconds = critical_path(nodes)
+    assert path == ["a", "b"]
+    assert seconds is None
+
+
+def test_critical_path_single_chain_includes_every_node() -> None:
+    nodes = [_gn("a", 0, 1.0), _gn("b", 1, 2.0), _gn("c", 2, 3.0)]
+    path, seconds = critical_path(nodes)
+    assert path == ["a", "b", "c"]
+    assert seconds == 6.0
+
+
+def test_build_graph_flags_the_slowest_summarizer_on_the_critical_path() -> None:
+    # A fan-out where summarize-2 is the slow branch (11s vs 9s/10s). The critical
+    # path must run search → summarize-2 → synthesize, and on_critical_path must
+    # agree with the returned id list.
+    d1, d2, d3 = (decision(at=x) for x in (0, 10, 40))
+    search = scheduled("1", by=d1, at=1, node_id="search")
+    sums = [scheduled(str(i + 2), by=d2, at=11, node_id=f"summarize-{i}") for i in range(3)]
+    synth = scheduled("5", by=d3, at=41, node_id="synthesize")
+    events = [
+        wf_started(),
+        d1,
+        search,
+        started(search, at=1, identity="w"),
+        completed(search, at=9),
+        d2,
+    ]
+    for i, s in enumerate(sums):
+        events += [s, started(s, at=11, identity="w"), completed(s, at=20 + i)]
+    events += [d3, synth, started(synth, at=41, identity="w"), completed(synth, at=55)]
+
+    graph = build(events, status="Completed", terminal=True)
+    by_id = {n.id: n for n in graph.nodes}
+
+    assert {n.id for n in graph.nodes if n.on_critical_path} == set(graph.critical_path)
+    labels = [by_id[nid].label for nid in graph.critical_path]
+    assert labels == ["search", "summarize-2", "synthesize"]
+    # 8s (search) + 11s (slowest summary) + 14s (synthesize) = 33s.
+    assert graph.critical_path_seconds == 33.0

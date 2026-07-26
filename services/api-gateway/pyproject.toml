@@ -16,6 +16,11 @@ dependencies = [
     "temporalio>=1.9,<2",
     "ancora",
     "ancora-common",
+    # Replay (Phase 4d) feeds a run's history back through the workflow definitions
+    # to verify determinism; those live in the worker package. Imported lazily in
+    # the replay path only — the control plane needs the worker's code for nothing
+    # else, and degrades to a clear error if it is absent.
+    "ancora-worker",
 ]
 
 [build-system]

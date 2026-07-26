@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 from temporalio.api.history.v1 import HistoryEvent
 from temporalio.api.workflow.v1 import PendingActivityInfo, PendingWorkflowTaskInfo
 from temporalio.client import Client, WorkflowFailureError
+from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
 from ancora_api.graph import build_graph
@@ -26,9 +27,12 @@ from ancora_api.recovery import FleetLiveness, build_recovery
 from ancora_api.schemas import (
     RunActivityOut,
     RunGraphOut,
+    RunHistoryEventOut,
+    RunHistoryOut,
     RunLiveOut,
     RunOut,
     RunRecoveryOut,
+    RunReplayOut,
     StartRunRequest,
     WorkflowDefOut,
 )
@@ -43,7 +47,7 @@ from ancora_common.catalog import (
     map_temporal_status,
 )
 from ancora_common.db import session_scope
-from ancora_common.models import ApprovalGate, WorkflowRun, WorkflowVersion
+from ancora_common.models import ApprovalGate, RunEventRow, WorkflowRun, WorkflowVersion
 
 
 class NotFoundError(Exception):
@@ -82,6 +86,8 @@ class _Execution:
     status: str
     terminal: bool
     workflow_name: str
+    temporal_wf_id: str = ""
+    temporal_run_id: str = ""
     events: list[HistoryEvent] = field(default_factory=list)
     pending_activities: list[PendingActivityInfo] = field(default_factory=list)
     pending_workflow_task: PendingWorkflowTaskInfo | None = None
@@ -316,6 +322,8 @@ class WorkflowService:
                 status=run.status,
                 terminal=run.status in AncoraRunStatus.TERMINAL,
                 workflow_name=run.workflow_version.workflow_def.name,
+                temporal_wf_id=run.temporal_wf_id,
+                temporal_run_id=run.temporal_run_id,
             )
             wf_id = run.temporal_wf_id
             temporal_run_id = run.temporal_run_id
@@ -370,6 +378,92 @@ class WorkflowService:
             events=ex.events,
             pending_activities=ex.pending_activities,
             has_pending_workflow_task=ex.pending_workflow_task is not None,
+        )
+
+    async def get_run_history(self, run_id: uuid.UUID) -> RunHistoryOut:
+        """The run's projected event log, oldest first (Phase 4d).
+
+        Reads the ``run_event`` projection the consumer maintains — not Temporal —
+        so the scrubbable timeline is a cheap DB read and works with the cluster
+        down. Replaying the prefix up to any event reconstructs the run's state at
+        that instant, which is what the history scrubber does.
+        """
+        async with session_scope() as session:
+            run = await _load_run(session, run_id)
+            if run is None:
+                raise NotFoundError(f"run '{run_id}' not found")
+            wf_id = run.temporal_wf_id
+            rows = list(
+                (
+                    await session.execute(
+                        select(RunEventRow)
+                        .where(RunEventRow.temporal_wf_id == wf_id)
+                        .order_by(RunEventRow.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        events = [
+            RunHistoryEventOut(
+                seq=row.id,
+                kind=row.kind,
+                node_id=row.node_id,
+                activity_id=row.activity_id,
+                activity_type=row.activity_type,
+                attempt=row.attempt,
+                worker_id=row.worker_id,
+                status=row.status,
+                error=row.error,
+                at=row.event_ts,
+            )
+            for row in rows
+        ]
+        return RunHistoryOut(run_id=run_id, temporal_wf_id=wf_id, events=events)
+
+    async def replay_run(self, run_id: uuid.UUID) -> RunReplayOut:
+        """Replay a run's history against the current workflow code (Phase 4d).
+
+        This is the durability guarantee made checkable: Temporal feeds the whole
+        recorded history back through the workflow definition and confirms every
+        decision still lands identically. A failure is a non-determinism — the code
+        has drifted from what the run was built on — which is exactly what would
+        strand the run on resume. Replay executes no activities; their results come
+        from history.
+
+        The workflow definitions live in the worker tier, so they are imported
+        lazily here — the control plane depends on the worker's *code* only for
+        this verification path, and a deployment without it degrades to a clear
+        error rather than a broken import.
+        """
+        from temporalio.worker import Replayer
+
+        try:
+            from ancora_worker.examples import WORKFLOWS
+        except ImportError as exc:  # pragma: no cover — only in a worker-less image
+            raise NotFoundError(
+                f"replay unavailable: workflow definitions not present ({exc})"
+            ) from exc
+
+        ex = await self._read_execution(run_id)
+        handle = self.client.get_workflow_handle(ex.temporal_wf_id, run_id=ex.temporal_run_id)
+        history = await handle.fetch_history()
+
+        replayer = Replayer(workflows=WORKFLOWS, data_converter=pydantic_data_converter)
+        ok = True
+        detail: str | None = None
+        try:
+            await replayer.replay_workflow(history)
+        except Exception as exc:  # noqa: BLE001 — any replay failure is the finding
+            ok = False
+            detail = str(exc)
+
+        return RunReplayOut(
+            run_id=run_id,
+            workflow_name=ex.workflow_name,
+            ok=ok,
+            events_replayed=len(history.events),
+            detail=detail,
         )
 
     # ---- internal: crude status projection ------------------------------ #

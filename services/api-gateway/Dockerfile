@@ -13,11 +13,14 @@ COPY pyproject.toml uv.lock* ./
 COPY packages/sdk-python/pyproject.toml packages/sdk-python/
 COPY packages/common/pyproject.toml packages/common/
 COPY services/api-gateway/pyproject.toml services/api-gateway/
+# Workflow definitions for the replay verification path (Phase 4d).
+COPY services/workflow-workers/pyproject.toml services/workflow-workers/
 
 # Copy sources for the local workspace members.
 COPY packages/sdk-python/ packages/sdk-python/
 COPY packages/common/ packages/common/
 COPY services/api-gateway/ services/api-gateway/
+COPY services/workflow-workers/ services/workflow-workers/
 
 # Install only the api-gateway package (and its workspace deps) into a venv.
 RUN --mount=type=cache,target=/root/.cache/uv \

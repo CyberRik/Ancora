@@ -21,10 +21,12 @@ from ancora_api.schemas import (
     RetryAttemptOut,
     RunCostOut,
     RunGraphOut,
+    RunHistoryOut,
     RunLinks,
     RunLiveOut,
     RunOut,
     RunRecoveryOut,
+    RunReplayOut,
     StartRunRequest,
     StartRunResponse,
 )
@@ -119,6 +121,33 @@ async def get_run_graph(
     graph from one that was approved, and both are true.
     """
     return await service.get_run_graph(run_id)
+
+
+@router.get("/runs/{run_id}/history", response_model=RunHistoryOut)
+async def get_run_history(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+) -> RunHistoryOut:
+    """The run's projected event log, oldest first — the scrubbable timeline.
+
+    Reads the ``run_event`` projection (not Temporal), so it is a cheap read and
+    the substrate the history scrubber replays through.
+    """
+    return await service.get_run_history(run_id)
+
+
+@router.post("/runs/{run_id}/replay", response_model=RunReplayOut)
+async def replay_run(
+    run_id: uuid.UUID,
+    service: WorkflowService = Depends(get_service),
+) -> RunReplayOut:
+    """Replay this run's history against the current workflow code (determinism check).
+
+    The durability guarantee made checkable: if replay fails, the code has drifted
+    from what the run was built on — the non-determinism that would strand it on
+    resume. Executes no activities; their results come from history.
+    """
+    return await service.replay_run(run_id)
 
 
 @router.get("/runs/{run_id}/cost", response_model=RunCostOut)

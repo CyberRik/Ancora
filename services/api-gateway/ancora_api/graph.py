@@ -484,6 +484,11 @@ def build_graph(
                     GraphEdgeOut(source=src.id, target=dst.id, done=src.state == "completed")
                 )
 
+    path, path_seconds = critical_path(nodes)
+    on_path = set(path)
+    for n in nodes:
+        n.on_critical_path = n.id in on_path
+
     return RunGraphOut(
         run_id=run_id,
         workflow_name=r.workflow_name or workflow_name,
@@ -493,7 +498,39 @@ def build_graph(
         edges=edges,
         completed=sum(1 for n in nodes if n.state == "completed"),
         total=len(nodes),
+        critical_path=path,
+        critical_path_seconds=path_seconds,
     )
+
+
+def critical_path(nodes: Sequence[GraphNodeOut]) -> tuple[list[str], float | None]:
+    """The chain of vertices that sets the run's wall-clock time (Phase 4d).
+
+    Edges join consecutive layers fully — a layer (a fan-out) is not done until its
+    *slowest* member is — so the run's duration is the sum over layers of the
+    slowest vertex in each, and that slowest-per-layer chain is the critical path:
+    the vertices to attack to make the run faster. Vertices with no measured
+    duration yet (running, queued) contribute the still-connected chain but not to
+    the time. Returns the ordered vertex ids and the summed seconds (``None`` until
+    at least one vertex has a duration).
+    """
+    by_layer: dict[int, list[GraphNodeOut]] = {}
+    for n in nodes:
+        by_layer.setdefault(n.layer, []).append(n)
+
+    path: list[str] = []
+    total = 0.0
+    measured = False
+    for layer in sorted(by_layer):
+        # Slowest vertex in the layer; ties and unmeasured vertices break by id so
+        # the path is deterministic.
+        slowest = max(by_layer[layer], key=lambda n: (n.duration_seconds or -1.0, n.id))
+        path.append(slowest.id)
+        if slowest.duration_seconds is not None:
+            total += slowest.duration_seconds
+            measured = True
+
+    return path, (round(total, 6) if measured else None)
 
 
 def _disambiguate(nodes: list[GraphNodeOut]) -> None:

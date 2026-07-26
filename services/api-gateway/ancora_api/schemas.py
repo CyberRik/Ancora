@@ -243,6 +243,9 @@ class GraphNodeOut(BaseModel):
     timed_out: bool = False
     # Explanation shown when the DAG alone would not say why a vertex looks stuck.
     note: str | None = None
+    # True if this vertex is on the critical path — the slowest-per-layer chain
+    # that sets the run's wall-clock time (see RunGraphOut.critical_path).
+    on_critical_path: bool = False
 
 
 class GraphEdgeOut(BaseModel):
@@ -279,6 +282,62 @@ class RunGraphOut(BaseModel):
     # history cannot know steps the workflow has not committed to yet.
     completed: int = 0
     total: int = 0
+    # The critical path: vertex ids, in layer order, of the slowest branch of each
+    # layer. Because a fan-out completes only when its slowest member does, this
+    # chain is what determines the run's total time — the place to look to make it
+    # faster. Empty until at least one vertex has a measured duration.
+    critical_path: list[str] = Field(default_factory=list)
+    # Wall-clock seconds along that path (sum of the per-layer slowest durations).
+    critical_path_seconds: float | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Event history (Phase 4d) — the scrubbable timeline
+# --------------------------------------------------------------------------- #
+class RunHistoryEventOut(BaseModel):
+    """One event in a run's timeline, as the consumer projected it to ``run_event``.
+
+    The ordered sequence is the substrate for the history scrubber: replaying the
+    prefix up to any point reconstructs what the run looked like at that instant.
+    """
+
+    seq: int
+    kind: str
+    node_id: str | None = None
+    activity_id: str | None = None
+    activity_type: str | None = None
+    attempt: int = 1
+    worker_id: str | None = None
+    status: str | None = None
+    error: str | None = None
+    at: datetime
+
+
+class RunHistoryOut(BaseModel):
+    """A run's full projected event log, oldest first."""
+
+    run_id: uuid.UUID
+    temporal_wf_id: str
+    events: list[RunHistoryEventOut] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Replay (Phase 4d) — deterministic re-execution of recorded history
+# --------------------------------------------------------------------------- #
+class RunReplayOut(BaseModel):
+    """The verdict of replaying a run's history against the current workflow code.
+
+    Replay is the durability guarantee made checkable: Temporal feeds the recorded
+    history back through the workflow definition and confirms every decision still
+    lands the same way. ``ok=false`` means the code has drifted from what the run
+    was built on — a non-determinism the runtime would have caught on resume.
+    """
+
+    run_id: uuid.UUID
+    workflow_name: str
+    ok: bool
+    events_replayed: int
+    detail: str | None = None
 
 
 # --------------------------------------------------------------------------- #

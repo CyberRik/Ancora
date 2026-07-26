@@ -48,6 +48,7 @@ import {
   TriangleAlert,
   UserCheck,
   X,
+  Zap,
 } from "lucide-react";
 import type { GraphNode, GraphNodeState, RunGraph } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -151,6 +152,7 @@ function DagNode({ data }: NodeProps<Node<DagNodeData>>) {
       className={cn(
         "rounded-lg border px-3 py-2 text-left transition-colors",
         style.ring,
+        node.on_critical_path && !selected && "ring-1 ring-accent/40",
         selected && "ring-2 ring-accent/60",
       )}
       style={{ width: NODE_W }}
@@ -161,6 +163,12 @@ function DagNode({ data }: NodeProps<Node<DagNodeData>>) {
           className={cn("h-3 w-3 shrink-0", style.text, style.spin && "animate-spin")}
         />
         <span className="truncate font-mono text-[13px] font-medium">{node.label}</span>
+        {node.on_critical_path && (
+          <Zap
+            className="ml-auto h-3 w-3 shrink-0 text-accent"
+            aria-label="on the critical path"
+          />
+        )}
       </div>
       <div className="mt-1 flex items-center justify-between gap-2">
         <span className="truncate font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
@@ -226,27 +234,33 @@ function layout(graph: RunGraph, selectedId: string | null): Node<DagNodeData>[]
   });
 }
 
-function edges(graph: RunGraph): Edge[] {
-  return graph.edges.map((e) => ({
-    id: `${e.source}->${e.target}`,
-    source: e.source,
-    target: e.target,
-    animated: !e.done,
-    style: {
-      stroke: e.done
+function edges(graph: RunGraph, criticalEdges: Set<string>): Edge[] {
+  return graph.edges.map((e) => {
+    const id = `${e.source}->${e.target}`;
+    const critical = criticalEdges.has(id);
+    const color = critical
+      ? "hsl(var(--accent) / 0.7)"
+      : e.done
         ? "hsl(var(--success) / 0.45)"
-        : "hsl(var(--muted-foreground) / 0.35)",
-      strokeWidth: 1.5,
-    },
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 14,
-      height: 14,
-      color: e.done
-        ? "hsl(var(--success) / 0.45)"
-        : "hsl(var(--muted-foreground) / 0.35)",
-    },
-  }));
+        : "hsl(var(--muted-foreground) / 0.35)";
+    return {
+      id,
+      source: e.source,
+      target: e.target,
+      animated: !e.done,
+      style: { stroke: color, strokeWidth: critical ? 2.5 : 1.5 },
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color },
+    };
+  });
+}
+
+// Edges joining consecutive vertices of the critical path (the slowest chain).
+function criticalEdgeIds(graph: RunGraph): Set<string> {
+  const ids = new Set<string>();
+  for (let i = 0; i + 1 < graph.critical_path.length; i++) {
+    ids.add(`${graph.critical_path[i]}->${graph.critical_path[i + 1]}`);
+  }
+  return ids;
 }
 
 // --------------------------------------------------------------------------- //
@@ -313,7 +327,7 @@ function Canvas({
 }) {
   const { fitView } = useReactFlow();
   const nodes = useMemo(() => layout(graph, selectedId), [graph, selectedId]);
-  const flowEdges = useMemo(() => edges(graph), [graph]);
+  const flowEdges = useMemo(() => edges(graph, criticalEdgeIds(graph)), [graph]);
 
   // Refit only when the shape changes. Refitting on every poll would nudge the
   // viewport out from under someone who has panned to look at a node.
@@ -352,7 +366,14 @@ function Canvas({
   );
 }
 
-export function RunDag({ data }: { data: RunGraph | null }) {
+export function RunDag({
+  data,
+  override,
+}: {
+  data: RunGraph | null;
+  /** Scrub view: node label → state at the scrubbed instant. Overrides live state. */
+  override?: Record<string, GraphNodeState> | null;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const select = useCallback((id: string | null) => setSelectedId(id), []);
 
@@ -360,7 +381,13 @@ export function RunDag({ data }: { data: RunGraph | null }) {
   // there is genuinely no graph — an empty canvas would just look broken.
   if (!data || data.nodes.length === 0) return null;
 
-  const selected = data.nodes.find((n) => n.id === selectedId) ?? null;
+  // When scrubbing history, recolour each vertex to its state at that instant;
+  // the shape (layers, edges, critical path) is the run's and does not change.
+  const graph: RunGraph = override
+    ? { ...data, nodes: data.nodes.map((n) => ({ ...n, state: override[n.label] ?? n.state })) }
+    : data;
+
+  const selected = graph.nodes.find((n) => n.id === selectedId) ?? null;
   const height = Math.min(
     520,
     Math.max(
@@ -375,6 +402,8 @@ export function RunDag({ data }: { data: RunGraph | null }) {
     ),
   );
 
+  const critical = duration(data.critical_path_seconds);
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -383,8 +412,18 @@ export function RunDag({ data }: { data: RunGraph | null }) {
           <span className="font-mono tabular-nums">
             {data.completed}/{data.total}
           </span>{" "}
-          steps recorded · reconstructed from this run&apos;s history, so it is the
-          shape the run <em>took</em>, not a diagram of the code
+          steps recorded
+          {critical && (
+            <>
+              {" · "}
+              <span className="text-accent">
+                <Zap className="mb-0.5 mr-0.5 inline h-3 w-3" />
+                critical path <span className="font-mono tabular-nums">{critical}</span>
+              </span>
+            </>
+          )}{" "}
+          · reconstructed from this run&apos;s history, so it is the shape the run{" "}
+          <em>took</em>, not a diagram of the code
         </p>
       </div>
       <div
@@ -393,7 +432,7 @@ export function RunDag({ data }: { data: RunGraph | null }) {
         data-testid="run-dag"
       >
         <ReactFlowProvider>
-          <Canvas graph={data} selectedId={selectedId} onSelect={select} />
+          <Canvas graph={graph} selectedId={selectedId} onSelect={select} />
         </ReactFlowProvider>
       </div>
       {selected ? (
