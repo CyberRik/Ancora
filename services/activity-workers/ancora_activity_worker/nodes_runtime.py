@@ -41,6 +41,7 @@ from ancora.nodes.llm import MockProvider, register_provider
 from ancora.nodes.registry import get as get_node
 from ancora_activity_worker.runtime import get_inbox, get_node_recorder, get_scheduler
 from ancora_common import projections
+from ancora_common.tracing import get_tracer
 
 logger = logging.getLogger("ancora.runtime.nodes")
 
@@ -131,7 +132,17 @@ async def _execute_node(
         attempt=activity.info().attempt,
         log=activity.logger,
     )
-    output = await node.execute(parsed, ctx)
+    # A span per node so a slow provider (the "→ provider" leg of the trace) is
+    # visible as its own segment under the activity span.
+    provider, model = _provider_of(type_name, payload)
+    with get_tracer().start_as_current_span(f"node.{type_name}") as span:
+        span.set_attribute("ancora.node_id", node_id)
+        span.set_attribute("ancora.node_type", type_name)
+        if provider:
+            span.set_attribute("ancora.provider", provider)
+        if model:
+            span.set_attribute("ancora.model", model)
+        output = await node.execute(parsed, ctx)
     return {
         "output": output.model_dump(mode="json"),
         "cost": ctx.total_cost.model_dump(mode="json"),

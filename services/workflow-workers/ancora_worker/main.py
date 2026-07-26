@@ -12,12 +12,14 @@ import logging
 import signal
 import socket
 
+from temporalio.contrib.opentelemetry import TracingInterceptor
 from temporalio.worker import Worker
 
 from ancora_common.event_interceptor import EventInterceptor
 from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
 from ancora_common.temporal import connect
+from ancora_common.tracing import configure_tracing
 from ancora_worker.catalog_report import report_catalog
 from ancora_worker.examples import ACTIVITIES, WORKFLOWS
 from ancora_worker.gate_activities import GATE_ACTIVITIES
@@ -35,6 +37,7 @@ ALL_ACTIVITIES = [*ACTIVITIES, *GATE_ACTIVITIES]
 async def _run() -> None:
     settings = WorkerSettings()
     configure_logging(level=settings.log_level, json_output=settings.log_json)
+    configure_tracing("ancora-workflow-worker", endpoint=settings.otel_endpoint)
 
     client = await connect(settings.temporal_address, settings.temporal_namespace)
 
@@ -51,13 +54,15 @@ async def _run() -> None:
     bus = EventBus(settings.redis_url)
     worker_identity = f"{socket.gethostname()}:workflow"
 
+    # TracingInterceptor carries trace context across the workflow→activity hop;
+    # EventInterceptor emits the live lifecycle events.
     worker = Worker(
         client,
         task_queue=settings.task_queue,
         workflows=WORKFLOWS,
         activities=ALL_ACTIVITIES,
         max_concurrent_activities=settings.max_concurrent_activities,
-        interceptors=[EventInterceptor(bus, worker_identity)],
+        interceptors=[TracingInterceptor(), EventInterceptor(bus, worker_identity)],
     )
 
     stop = asyncio.Event()

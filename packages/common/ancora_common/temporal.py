@@ -13,6 +13,7 @@ import asyncio
 import logging
 
 from temporalio.client import Client
+from temporalio.contrib.opentelemetry import TracingInterceptor
 from temporalio.contrib.pydantic import pydantic_data_converter
 
 logger = logging.getLogger("ancora.temporal")
@@ -33,6 +34,13 @@ async def connect(
                 address,
                 namespace=namespace,
                 data_converter=pydantic_data_converter,
+                # Client-side tracing: a StartWorkflow made through this client is
+                # the *root* of the run's trace, and its context is propagated into
+                # the workflow (and on to activities) via Temporal headers. Without
+                # it, activities start as disconnected root spans. A no-op unless a
+                # tracer provider is configured (configure_tracing), so it is inert
+                # in tests and in services that never enabled tracing.
+                interceptors=[TracingInterceptor()],
             )
         except Exception as exc:  # noqa: BLE001 — connect surfaces many error types
             last_exc = exc

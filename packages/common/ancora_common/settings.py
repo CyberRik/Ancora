@@ -34,3 +34,7 @@ class CommonSettings(BaseSettings):
     # "ray://host:10001" attaches to a running head. Empty falls back to the
     # in-process LocalBackend so activities run without a cluster.
     ray_address: str = ""
+
+    # OTLP/HTTP traces endpoint (the collector's :4318). Empty → tracing is a
+    # no-op, so dev/CI without a collector runs unchanged (Phase 4c).
+    otel_endpoint: str = ""

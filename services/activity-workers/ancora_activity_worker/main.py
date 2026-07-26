@@ -16,6 +16,7 @@ import signal
 from collections.abc import Callable
 from typing import Any
 
+from temporalio.contrib.opentelemetry import TracingInterceptor
 from temporalio.worker import Worker
 
 from ancora_activity_worker import runtime
@@ -31,6 +32,7 @@ from ancora_common.logging import configure_logging
 from ancora_common.resources import queue_for
 from ancora_common.scheduler_client import SchedulerClient
 from ancora_common.temporal import connect
+from ancora_common.tracing import configure_tracing
 
 logger = logging.getLogger("ancora.activity-worker")
 
@@ -38,6 +40,7 @@ logger = logging.getLogger("ancora.activity-worker")
 async def _run() -> None:
     settings = ActivityWorkerSettings()
     configure_logging(level=settings.log_level, json_output=settings.log_json)
+    configure_tracing("ancora-activity-worker", endpoint=settings.otel_endpoint)
 
     client = await connect(settings.temporal_address, settings.temporal_namespace)
 
@@ -59,7 +62,9 @@ async def _run() -> None:
     queues = [queue_for(p) for p in settings.pools]
     # Emit activity lifecycle events for the live UI (Phase 4).
     bus = EventBus(settings.redis_url)
-    interceptors = [EventInterceptor(bus, settings.worker_id)]
+    # TracingInterceptor continues the workflow's trace into the activity; the
+    # Ray/local boundary is bridged separately in ray_bridge.
+    interceptors = [TracingInterceptor(), EventInterceptor(bus, settings.worker_id)]
     workers = [
         Worker(
             client,

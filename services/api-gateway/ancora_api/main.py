@@ -42,6 +42,7 @@ from ancora_common import db
 from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
 from ancora_common.temporal import connect
+from ancora_common.tracing import configure_tracing
 
 logger = logging.getLogger("ancora.api")
 
@@ -61,6 +62,7 @@ class HealthStatus(BaseModel):
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(level=settings.log_level, json_output=settings.log_json)
+    configure_tracing("ancora-api", endpoint=settings.otel_endpoint)
     logger.info("api-gateway starting", extra={"environment": settings.environment})
 
     # Connect to Temporal in the background-friendly way: failure here degrades

@@ -63,6 +63,17 @@ services:
     ports:
       - "8233:8080"
 
+  # Trace backend (Phase 4c): ingests OTLP spans and serves the trace UI, so a
+  # run's workflow→activity→ray→provider tree is inspectable in one place. Spans
+  # only flow when ANCORA_OTEL_ENDPOINT is set on the services below.
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"   # trace UI
+      - "4318:4318"     # OTLP/HTTP ingest
+
   # One-shot: apply Alembic migrations before the API starts serving.
   migrate:
     build:
@@ -96,6 +107,7 @@ services:
       - ANCORA_TASK_QUEUE=ancora-default
       - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_CORS_ORIGINS=["http://localhost:3000"]
+      - ANCORA_OTEL_ENDPOINT=http://jaeger:4318/v1/traces
       # Chaos Lab: lets the dashboard SIGKILL a worker container. Enabled here
       # (local dev/demo stack) and nowhere else — it requires the Docker socket
       # below, which grants control over this host's containers.
@@ -142,6 +154,7 @@ services:
       - ANCORA_TASK_QUEUE=ancora-default
       # Phase 4: the activity interceptor publishes lifecycle events here.
       - ANCORA_REDIS_URL=redis://redis:6379/0
+      - ANCORA_OTEL_ENDPOINT=http://jaeger:4318/v1/traces
       - WATCHFILES_FORCE_POLLING=true
     volumes:
       - ../../services/workflow-workers:/app/services/workflow-workers
@@ -204,6 +217,7 @@ services:
       - ANCORA_TEMPORAL_ADDRESS=temporal:7233
       - ANCORA_TEMPORAL_NAMESPACE=default
       - ANCORA_REDIS_URL=redis://redis:6379/0
+      - ANCORA_OTEL_ENDPOINT=http://jaeger:4318/v1/traces
       - ANCORA_POOLS=["cpu","io"]
       - ANCORA_TOTAL_CPUS=4
       # Admission control. Unset this to run without a scheduler entirely.

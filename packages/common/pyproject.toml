@@ -13,6 +13,12 @@ dependencies = [
     "temporalio>=1.9,<2",
     "python-json-logger>=3.2",
     "redis>=5.2",
+    # Distributed tracing (Phase 4c). The HTTP/protobuf OTLP exporter avoids the
+    # grpcio build; it talks to the collector's :4318 endpoint. Tracing is a no-op
+    # unless ANCORA_OTEL_ENDPOINT is set, so these are inert in tests/dev-without-collector.
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-http>=1.27",
 ]
 
 [build-system]

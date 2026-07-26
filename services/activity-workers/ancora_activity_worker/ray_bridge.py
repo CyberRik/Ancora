@@ -24,11 +24,23 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Protocol
 
 from ancora_common.resources import ResourceSpec
+from ancora_common.tracing import continue_trace, inject_carrier
 
 logger = logging.getLogger("ancora.runtime.bridge")
 
 # A compute function receives progress and returns a JSON-able result.
 ComputeFn = Callable[["LiveProgress"], Any]
+
+
+def _traced(fn: ComputeFn, progress: LiveProgress, carrier: dict[str, str], span: str) -> Any:
+    """Run a compute under a span re-parented from the driver's carrier.
+
+    A new thread (LocalBackend) or a new process (Ray) does not inherit the
+    driver's ambient trace context, so we carry it explicitly and re-attach it
+    here — this is the hop that keeps a run's trace one unbroken tree.
+    """
+    with continue_trace(carrier, span):
+        return fn(progress)
 
 
 class LiveProgress:
@@ -118,7 +130,10 @@ class LocalBackend:
         self, fn: ComputeFn, *, resources: ResourceSpec, progress: LiveProgress
     ) -> TaskHandle:
         # ``resources`` is advisory here — the local pool has no accounting.
-        future = self._pool.submit(fn, progress)
+        # Carry trace context into the worker thread (contextvars don't follow
+        # a pool submit) so the compute span parents to the activity span.
+        carrier = inject_carrier()
+        future = self._pool.submit(_traced, fn, progress, carrier, "compute.local")
         return _LocalTaskHandle(future, progress)
 
     def shutdown(self) -> None:
@@ -152,9 +167,20 @@ class _RayTaskHandle:
         return self._ray.get(self._ref)
 
 
-def _ray_entry(fn: ComputeFn) -> Any:
-    """Runs inside the Ray worker: a fresh, process-local progress channel."""
-    return fn(LiveProgress())
+def _ray_entry(fn: ComputeFn, carrier: dict[str, str]) -> Any:
+    """Runs inside the Ray worker: a fresh, process-local progress channel.
+
+    Re-attaches the driver's trace context so the compute span is a child of the
+    activity that submitted it — the trace stays one tree across the process hop.
+    A Ray worker is a distinct process with no tracer configured, so set one up
+    (best-effort, from the inherited env) before opening the span.
+    """
+    import os
+
+    from ancora_common.tracing import configure_tracing
+
+    configure_tracing("ancora-ray-compute", endpoint=os.environ.get("ANCORA_OTEL_ENDPOINT"))
+    return _traced(fn, LiveProgress(), carrier, "compute.ray")
 
 
 class RayBackend:
@@ -166,8 +192,10 @@ class RayBackend:
     def submit(
         self, fn: ComputeFn, *, resources: ResourceSpec, progress: LiveProgress
     ) -> TaskHandle:
+        # Inject on the driver so the Ray worker can re-parent the compute span.
+        carrier = inject_carrier()
         remote = self._ray.remote(**resources.to_ray_options())(_ray_entry)
-        ref = remote.remote(fn)
+        ref = remote.remote(fn, carrier)
         return _RayTaskHandle(ref, self._ray)
 
     def shutdown(self) -> None:
