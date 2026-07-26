@@ -26,6 +26,7 @@ from ancora_common.db import session_scope
 from ancora_common.events import EventBus, EventKind, RunEvent
 from ancora_common.models import WorkflowRun
 from ancora_event_consumer._util import sleep_or_stop
+from ancora_event_consumer.metrics import RECONCILE_PASSES, RUNS_SETTLED
 from ancora_event_consumer.settings import ConsumerSettings
 
 logger = logging.getLogger("ancora.consumer.reconciler")
@@ -116,7 +117,9 @@ class Reconciler:
         while not stop.is_set():
             try:
                 settled = await self.reconcile_once()
+                RECONCILE_PASSES.inc()
                 if settled:
+                    RUNS_SETTLED.inc(settled)
                     logger.info("reconciled %d run(s) to terminal", settled)
             except Exception as exc:  # noqa: BLE001 — keep the loop alive across hiccups
                 logger.warning("reconcile pass failed (retrying): %s", exc)

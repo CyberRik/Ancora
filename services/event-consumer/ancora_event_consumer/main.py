@@ -21,6 +21,7 @@ import signal
 from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
 from ancora_common.temporal import connect
+from ancora_event_consumer.http import serve
 from ancora_event_consumer.projector import Projector
 from ancora_event_consumer.reconciler import Reconciler
 from ancora_event_consumer.settings import ConsumerSettings
@@ -51,6 +52,9 @@ async def _run() -> None:
     if not tasks:
         logger.warning("both projector and reconciler disabled; nothing to do")
         return
+
+    # Health + Prometheus surface, alongside the loops (Phase 4c).
+    tasks.append(asyncio.create_task(serve(settings.metrics_port, stop)))
 
     logger.info("event consumer started")
     await stop.wait()

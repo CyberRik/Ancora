@@ -29,6 +29,7 @@ from ancora_common.db import session_scope
 from ancora_common.events import EventBus, RunEvent
 from ancora_common.models import RunEventRow
 from ancora_event_consumer._util import sleep_or_stop
+from ancora_event_consumer.metrics import EVENTS_PROJECTED, PROJECTOR_BATCHES
 from ancora_event_consumer.settings import ConsumerSettings
 
 logger = logging.getLogger("ancora.consumer.projector")
@@ -88,6 +89,9 @@ class Projector:
         # Safe to ack the whole batch: the insert is idempotent, so even the
         # events that collided on redelivery are durably present.
         await self._bus.ack([stream_id for stream_id, _ in batch])
+        PROJECTOR_BATCHES.inc()
+        for _stream_id, event in batch:
+            EVENTS_PROJECTED.inc(kind=event.kind)
         return written
 
     async def run_forever(self, stop: asyncio.Event) -> None:

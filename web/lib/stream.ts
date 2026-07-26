@@ -98,3 +98,68 @@ export function useRunStream(
 
   return state;
 }
+
+/**
+ * Subscribe to periodic worker-fleet snapshots.
+ *
+ * The server pushes the full worker list every couple of seconds, so the page
+ * reflects a kill (a worker going stale) live instead of on the next poll.
+ * Reconnects transparently — each snapshot is a full replacement, so a dropped
+ * socket costs nothing.
+ */
+export function useWorkersStream(
+  onWorkers: (workers: unknown[]) => void,
+  enabled = true,
+): StreamState {
+  const [state, setState] = useState<StreamState>("connecting");
+  const onWorkersRef = useRef(onWorkers);
+  onWorkersRef.current = onWorkers;
+
+  useEffect(() => {
+    if (!enabled) {
+      setState("closed");
+      return;
+    }
+    let socket: WebSocket | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    let stopped = false;
+
+    const connect = () => {
+      if (stopped) return;
+      setState("connecting");
+      socket = new WebSocket(wsUrl("/v1/stream/workers"));
+      socket.onopen = () => {
+        attempts = 0;
+        setState("open");
+      };
+      socket.onmessage = (msg) => {
+        let frame: StreamFrame;
+        try {
+          frame = JSON.parse(msg.data as string) as StreamFrame;
+        } catch {
+          return;
+        }
+        if (frame.type === "workers" && Array.isArray(frame.workers)) {
+          onWorkersRef.current(frame.workers);
+        }
+      };
+      socket.onclose = () => {
+        setState("closed");
+        if (stopped) return;
+        attempts += 1;
+        retry = setTimeout(connect, Math.min(1000 * 2 ** (attempts - 1), 15000));
+      };
+      socket.onerror = () => socket?.close();
+    };
+
+    connect();
+    return () => {
+      stopped = true;
+      if (retry) clearTimeout(retry);
+      socket?.close();
+    };
+  }, [enabled]);
+
+  return state;
+}

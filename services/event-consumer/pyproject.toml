@@ -12,6 +12,9 @@ dependencies = [
     "temporalio>=1.7",
     "pydantic>=2.6",
     "pydantic-settings>=2.7",
+    # Minimal health/metrics HTTP surface (Phase 4c).
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
     "ancora-common",
     # Dev hot-reload wrapper for the local Docker stack (see docker-compose.yml).
     "watchfiles>=0.24",

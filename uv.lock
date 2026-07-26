@@ -334,11 +334,13 @@ source = { editable = "services/event-consumer" }
 dependencies = [
     { name = "ancora-common" },
     { name = "asyncpg" },
+    { name = "fastapi" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "temporalio" },
+    { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
 ]
 
@@ -346,11 +348,13 @@ dependencies = [
 requires-dist = [
     { name = "ancora-common", editable = "packages/common" },
     { name = "asyncpg", specifier = ">=0.29" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "redis", specifier = ">=5.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "temporalio", specifier = ">=1.7" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
     { name = "watchfiles", specifier = ">=0.24" },
 ]
 

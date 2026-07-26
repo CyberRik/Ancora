@@ -29,18 +29,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from ancora_api import __version__
 from ancora_api.approval_service import ApprovalNotFoundError
 from ancora_api.idempotency import IdempotencyMiddleware
+from ancora_api.metrics import REGISTRY as METRICS
 from ancora_api.routers import approvals, chaos, plugins, runs, stream, workers, workflows
 from ancora_api.service import NotFoundError
 from ancora_api.settings import get_settings
 from ancora_common import db
 from ancora_common.events import EventBus
 from ancora_common.logging import configure_logging
+from ancora_common.metrics import CONTENT_TYPE as MetricsContentType
 from ancora_common.temporal import connect
 from ancora_common.tracing import configure_tracing
 
@@ -130,6 +132,10 @@ def create_app() -> FastAPI:
             status="ok" if db_ok else "degraded",
             checks={"database": "ok" if db_ok else "unavailable"},
         )
+
+    @app.get("/metrics", tags=["meta"], include_in_schema=False)
+    async def metrics() -> PlainTextResponse:
+        return PlainTextResponse(METRICS.render(), media_type=MetricsContentType)
 
     @app.get("/v1/version", response_model=VersionInfo, tags=["meta"])
     async def version() -> VersionInfo:

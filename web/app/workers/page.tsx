@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Inbox, ServerCog } from "lucide-react";
 import { api, type Queue, type Worker } from "@/lib/api";
+import { useWorkersStream } from "@/lib/stream";
 import { cn } from "@/lib/utils";
 import {
   Alert,
@@ -34,14 +35,22 @@ export default function WorkersPage() {
   const [queues, setQueues] = useState<Queue[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Live worker snapshots over WebSocket — a kill shows up the moment the TTL
+  // lapses, not on the next poll. Queues aren't streamed, so they still poll.
+  useWorkersStream(
+    useCallback((w: unknown[]) => {
+      setWorkers(w as Worker[]);
+      setError(null);
+    }, []),
+  );
+
   useEffect(() => {
     const c = new AbortController();
     const load = () => {
-      Promise.all([api.listWorkers(c.signal), api.listQueues(c.signal)])
-        .then(([w, q]) => {
-          setWorkers(w);
+      api
+        .listQueues(c.signal)
+        .then((q) => {
           setQueues(q);
-          setError(null);
         })
         .catch((e) => {
           if (!c.signal.aborted) setError(e instanceof Error ? e.message : "failed to load");

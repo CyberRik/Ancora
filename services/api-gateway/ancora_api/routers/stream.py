@@ -29,6 +29,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from ancora_api.deps import get_worker_service
+from ancora_api.metrics import STREAM_ACTIVE, STREAM_CONNECTIONS
 from ancora_common.db import session_scope
 from ancora_common.events import EventBus, RunEvent
 from ancora_common.models import WorkflowRun
@@ -103,7 +104,8 @@ async def stream_run(websocket: WebSocket, run_id: str) -> None:
     bus: EventBus = websocket.app.state.event_bus
 
     await websocket.send_json({"type": "hello", "wf_id": wf_id, "status": status})
-
+    STREAM_CONNECTIONS.inc()
+    STREAM_ACTIVE.inc()
     try:
         while True:
             batch = await bus.tail_run(wf_id, last_id=last_id, block_ms=15000)
@@ -120,6 +122,8 @@ async def stream_run(websocket: WebSocket, run_id: str) -> None:
     except Exception as exc:  # noqa: BLE001 — a Redis blip must not 500 the socket
         logger.warning("run stream error (wf=%s): %s", wf_id, exc)
         await _safe_close(websocket)
+    finally:
+        STREAM_ACTIVE.dec()
 
 
 @router.websocket("/workers")

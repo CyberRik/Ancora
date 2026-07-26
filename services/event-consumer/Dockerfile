@@ -36,6 +36,10 @@ WORKDIR /app
 COPY --from=builder --chown=ancora:ancora /app /app
 
 USER ancora
+EXPOSE 8091
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=15s --retries=5 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8091/healthz').status==200 else 1)"
 
 WORKDIR /app/services/event-consumer
 CMD ["ancora-event-consumer"]

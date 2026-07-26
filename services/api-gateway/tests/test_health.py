@@ -42,3 +42,16 @@ async def test_workflow_endpoints_degrade_without_temporal(
     async with client:
         resp = await client.get("/v1/workflows")
     assert resp.status_code == 503
+
+
+async def test_metrics_endpoint_exposes_prometheus_text(client: httpx.AsyncClient) -> None:
+    from ancora_api.metrics import RUNS_STARTED
+
+    RUNS_STARTED.inc(workflow="metrics_test")
+    async with client:
+        resp = await client.get("/metrics")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/plain")
+    body = resp.text
+    assert "# TYPE ancora_api_runs_started_total counter" in body
+    assert 'ancora_api_runs_started_total{workflow="metrics_test"}' in body

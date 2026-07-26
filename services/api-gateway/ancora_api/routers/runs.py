@@ -15,6 +15,7 @@ from ancora_api.deps import (
     get_service,
     get_worker_service,
 )
+from ancora_api.metrics import RUNS_STARTED
 from ancora_api.recovery import FleetLiveness
 from ancora_api.schemas import (
     RetryAttemptOut,
@@ -45,6 +46,7 @@ async def start_run(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> StartRunResponse:
     run = await service.start_run(name, req, idempotency_key)
+    RUNS_STARTED.inc(workflow=name)
     return StartRunResponse(
         run_id=run.id,
         temporal_wf_id=run.temporal_wf_id,

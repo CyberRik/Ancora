@@ -272,6 +272,8 @@ services:
       - ANCORA_REDIS_URL=redis://redis:6379/0
       - ANCORA_LOG_JSON=false
       - WATCHFILES_FORCE_POLLING=true
+    ports:
+      - "8091:8091"   # health + Prometheus metrics
     volumes:
       - ../../services/event-consumer:/app/services/event-consumer
       - ../../packages/sdk-python:/app/packages/sdk-python
@@ -282,6 +284,34 @@ services:
       "/app/services/event-consumer", "/app/packages",
     ]
     restart: on-failure
+
+  # Metrics store (Phase 4c): scrapes the hand-rolled /metrics on the API,
+  # scheduler, and event-consumer.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  # Dashboards (Phase 4c): datasource + the Ancora overview are provisioned, so
+  # it works on first boot. Anonymous admin for the local demo only.
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on:
+      - prometheus
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_SECURITY_ADMIN_PASSWORD=ancora
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
 
   web:
     build:

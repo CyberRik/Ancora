@@ -1,0 +1,18 @@
+# Prometheus scrape config for the Ancora stack (Phase 4c).
+# Each service exposes a hand-rolled /metrics in the standard text format.
+global:
+  scrape_interval: 10s
+  scrape_timeout: 5s
+
+scrape_configs:
+  - job_name: ancora-api
+    static_configs:
+      - targets: ["api:8080"]
+
+  - job_name: ancora-scheduler
+    static_configs:
+      - targets: ["scheduler:8090"]
+
+  - job_name: ancora-event-consumer
+    static_configs:
+      - targets: ["event-consumer:8091"]

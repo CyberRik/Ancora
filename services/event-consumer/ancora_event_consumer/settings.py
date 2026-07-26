@@ -28,3 +28,6 @@ class ConsumerSettings(CommonSettings):
     # Toggle either half off independently (tests, or running projector-only).
     run_projector: bool = True
     run_reconciler: bool = True
+
+    # Port for the health/metrics HTTP surface.
+    metrics_port: int = 8091
