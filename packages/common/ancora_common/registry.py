@@ -71,12 +71,23 @@ async def upsert_worker(
     await session.execute(stmt)
 
 
-async def touch_worker_heartbeat(session: AsyncSession, worker_id: str) -> None:
-    """Bump the DB heartbeat timestamp (a durable fallback for Redis liveness)."""
+async def touch_worker_heartbeat(session: AsyncSession, worker_id: str) -> bool:
+    """Bump the DB heartbeat timestamp (a durable fallback for Redis liveness).
+
+    Returns ``False`` when the worker has no registration row. That is not a
+    benign no-op: :func:`reap_stale_workers` deletes rows whose heartbeat went
+    cold (a paused host, a DB outage, a long GC pause), and a bump cannot
+    resurrect a row that is gone. Without acting on ``False`` the reaper is a
+    one-way door — a perfectly healthy worker keeps updating nothing for the
+    rest of its life while the control plane reports it as absent. Callers are
+    expected to re-register on ``False``.
+    """
     result = await session.execute(select(Worker).where(Worker.worker_id == worker_id))
     row = result.scalar_one_or_none()
-    if row is not None:
-        row.last_heartbeat_at = datetime.now(UTC)
+    if row is None:
+        return False
+    row.last_heartbeat_at = datetime.now(UTC)
+    return True
 
 
 async def deregister_worker(session: AsyncSession, worker_id: str) -> None:

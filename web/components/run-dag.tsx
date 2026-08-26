@@ -35,6 +35,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -329,13 +330,33 @@ function Canvas({
   const nodes = useMemo(() => layout(graph, selectedId), [graph, selectedId]);
   const flowEdges = useMemo(() => edges(graph, criticalEdgeIds(graph)), [graph]);
 
-  // Refit only when the shape changes. Refitting on every poll would nudge the
-  // viewport out from under someone who has panned to look at a node.
+  // fitView sizes itself from *measured* node dimensions, and React Flow only
+  // measures a node a frame after it mounts. A live run streams its vertices in
+  // as the workflow decides them (1 → fan-out → fan-in → gate), so a fit
+  // scheduled in the same tick as a shape change frames the *previous* batch —
+  // or, on first paint, a single node at maxZoom, which is how a six-node run
+  // ends up showing only the tail of the graph.
+  //
+  // Two guards, because either alone leaves a hole: the double rAF puts the fit
+  // after the browser's layout pass, and nodesInitialized re-runs this once
+  // React Flow confirms every node has dimensions. Neither may early-return —
+  // bailing out drops that shape's refit entirely and the viewport then keeps
+  // whatever framing it had when the graph was one node wide.
+  const nodesInitialized = useNodesInitialized();
+
+  // Keyed on shape, not on every poll: refitting on each state tick would nudge
+  // the viewport out from under someone who has panned to look at a node.
   const shape = graph.nodes.map((n) => n.id).join(",");
   useEffect(() => {
-    const t = setTimeout(() => fitView({ padding: 0.18, duration: 240 }), 0);
-    return () => clearTimeout(t);
-  }, [shape, fitView]);
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => fitView({ padding: 0.18, duration: 240 }));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [shape, nodesInitialized, fitView]);
 
   return (
     <ReactFlow

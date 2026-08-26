@@ -61,14 +61,37 @@ class WorkerRegistration:
         try:
             while True:
                 await asyncio.sleep(s.heartbeat_interval_seconds)
-                await registry.set_liveness(self._redis, s.worker_id, s.liveness_ttl_seconds)
                 try:
-                    async with db.session_scope() as session:
-                        await registry.touch_worker_heartbeat(session, s.worker_id)
+                    await self._beat()
+                except asyncio.CancelledError:
+                    raise
                 except Exception as exc:  # noqa: BLE001
-                    logger.debug("heartbeat DB touch failed: %s", exc)
+                    # This loop is the only thing keeping the control plane's
+                    # view of this worker alive, so it has to outlive any single
+                    # failed beat. An escaping exception would kill the task
+                    # silently (nothing awaits it) and the worker would keep
+                    # doing durable work while showing up as gone.
+                    logger.warning("worker heartbeat failed (retrying): %s", exc)
         except asyncio.CancelledError:
             raise
+
+    async def _beat(self) -> None:
+        """One heartbeat: refresh Redis liveness, then the durable DB fallback."""
+        s = self._s
+        await registry.set_liveness(self._redis, s.worker_id, s.liveness_ttl_seconds)
+        async with db.session_scope() as session:
+            found = await registry.touch_worker_heartbeat(session, s.worker_id)
+        if found:
+            return
+        # The reaper deleted our row while our heartbeat was cold — a suspended
+        # host or a DB blip is enough. A bump is a no-op against a row that no
+        # longer exists, so re-register rather than staying invisible to the
+        # dashboard for the rest of this process's life.
+        logger.warning(
+            "worker registration row missing (reaped?) — re-registering",
+            extra={"worker_id": s.worker_id},
+        )
+        await self._register()
 
     async def stop(self) -> None:
         if self._task is not None:
