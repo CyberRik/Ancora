@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://youtu.be/UVKmMZnP50A"><b>▶ Watch the demo (2:38)</b></a> ·
   <a href="#-the-30-second-demo">Demo</a> ·
   <a href="#-architecture">Architecture</a> ·
   <a href="#-what-makes-this-hard">What makes it hard</a> ·
@@ -38,6 +39,13 @@ It combines **Temporal** (durable, event-sourced execution) with **Ray** (distri
 ---
 
 ## 🎬 The 30-second demo
+
+<p align="center">
+  <a href="https://youtu.be/UVKmMZnP50A">
+    <img src="docs/assets/demo-video-thumb.jpg" alt="Watch the Ancora demo on YouTube: a 2 minute 38 second walkthrough of the running system, ending with a chaos experiment that SIGKILLs a live worker and verifies the run recovered correctly." width="840">
+  </a>
+  <br><sub><i><b><a href="https://youtu.be/UVKmMZnP50A">▶ Watch the full walkthrough (2:38)</a></b> — the running system, end to end. Nothing mocked: every graph is reconstructed from Temporal's real event history, every kill is a real <code>SIGKILL</code>. <a href="https://youtu.be/UVKmMZnP50A?t=121">Jump to the chaos experiment at 2:01</a>.</i></sub>
+</p>
 
 The pitch of a durable runtime is "kill a worker, the run survives." Easy to *claim*, hard to *prove*. So Ancora ships a **chaos engine that asserts**: it starts a run, SIGKILLs a real worker container mid-flight, waits out the actual recovery, then **machine-checks the invariants** and **measures the recovery time**.
 
