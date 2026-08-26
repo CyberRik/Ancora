@@ -47,3 +47,11 @@ Thumbs.db
 
 # Local data volumes
 /deploy/docker/.data/
+
+# Demo & installer
+/demo/
+demo/
+docs/demo-script.md
+demo-script.md
+demo script.md
+install.sh
