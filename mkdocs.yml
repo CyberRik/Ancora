@@ -1,6 +1,6 @@
 site_name: Ancora
 site_description: A fault-tolerant runtime for durable AI workflows.
-repo_url: https://github.com/ancora/ancora
+repo_url: https://github.com/CyberRik/Ancora
 docs_dir: docs
 
 theme:

@@ -16,7 +16,7 @@
 
 <p align="center">
   <a href="https://youtu.be/UVKmMZnP50A"><b>▶ Watch the demo (2:38)</b></a> ·
-  <a href="#-the-30-second-demo">Demo</a> ·
+  <a href="#-kill-a-worker-prove-the-run-survived">Chaos that asserts</a> ·
   <a href="#-architecture">Architecture</a> ·
   <a href="#-what-makes-this-hard">What makes it hard</a> ·
   <a href="#-quickstart">Quickstart</a> ·
@@ -38,7 +38,7 @@ It combines **Temporal** (durable, event-sourced execution) with **Ray** (distri
 
 ---
 
-## 🎬 The 30-second demo
+## 🎬 Kill a worker. Prove the run survived.
 
 <p align="center">
   <a href="https://youtu.be/UVKmMZnP50A">
@@ -66,9 +66,9 @@ One click →
 | ✅ **no re-executed activities** | every completed step is a durable checkpoint — a kill never re-runs it (`7 activities, each exactly once`) |
 | ✅ **exactly-once effects** | no side-effecting node's idempotency guard was left half-committed |
 
-…with the **recovery time (RTO)** measured against an SLO. Making recovery *fast* is a first-class feature: activities heartbeat, so a killed worker is detected in **~6 seconds** instead of waiting out a 60-second timeout — a **9.5× improvement** that turns the demo from an awkward wait into an instant recovery.
+…with the **recovery time (RTO)** measured against an SLO, because recovering *correctly* and recovering *quickly* are separate claims. Activities heartbeat every 2 s under a ~6 s timeout, so a dead worker is detected in seconds rather than waiting out the full 60-second `start_to_close` budget — **9.5× faster failover**, without ever mistaking a slow worker for a dead one.
 
-This is a **regression test you can watch** — the same invariant checkers run as pure unit tests in CI against synthetic post-kill histories.
+This is a **regression test you can watch**: the same invariant checkers run as pure unit tests in CI, pinned against synthetic post-kill histories, so the guarantee holds without a live cluster.
 
 ---
 
@@ -211,7 +211,7 @@ The parts that were genuinely difficult — and the engineering decisions behind
 **Prerequisites:** [Docker](https://docs.docker.com/get-docker/) + Docker Compose.
 
 ```bash
-git clone https://github.com/ancora/ancora.git && cd ancora
+git clone https://github.com/CyberRik/Ancora.git && cd Ancora
 make up          # full stack: Temporal, Postgres, Redis, 3 workers, scheduler, observability
 ```
 
