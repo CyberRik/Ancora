@@ -12,6 +12,11 @@ import sys
 from pythonjsonlogger import json as jsonlogger
 
 
+def log_safe(value: object) -> str:
+    """Strip line breaks from request-supplied values so they cannot forge log lines."""
+    return str(value).replace("\r", "").replace("\n", "")
+
+
 def configure_logging(*, level: str = "INFO", json_output: bool = True) -> None:
     """Configure root logging once at process start (idempotent)."""
     root = logging.getLogger()
