@@ -2,15 +2,19 @@
 
 ## Reporting a vulnerability
 
-**Do not open a public issue for security problems.** Instead, email
-`security@ancora.dev` (placeholder) with:
+**Do not open a public issue for security problems.** Instead, report it
+privately through GitHub: go to the
+[Security tab](https://github.com/CyberRik/Ancora/security/advisories/new) and
+click **Report a vulnerability**. Only the maintainers can see the report.
+Include:
 
 - a description of the issue and its impact,
 - steps to reproduce,
 - affected version / commit SHA.
 
-We aim to acknowledge within 3 business days and to provide a remediation
-timeline after triage. Coordinated disclosure is appreciated; please give us a
+We aim to acknowledge within 3 business days (and always within 14 days) and to
+provide a remediation timeline after triage. Fixed vulnerabilities are listed in
+[`CHANGELOG.md`](CHANGELOG.md) for the release that fixes them. Coordinated disclosure is appreciated; please give us a
 reasonable window to ship a fix before any public write-up.
 
 ## Supported versions

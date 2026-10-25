@@ -377,8 +377,9 @@ class DurabilityDemoWorkflow(Workflow):
         from temporalio import workflow as temporal_workflow
 
         run_id = temporal_workflow.info().run_id
-        # Deterministic random: 1 to 3 crashes based on workflow run ID
-        num_crashes = (int(hashlib.md5(run_id.encode()).hexdigest()[:8], 16) % 3) + 1
+        # Deterministic random: 1 to 3 crashes based on workflow run ID (not a security use)
+        digest = hashlib.md5(run_id.encode(), usedforsecurity=False).hexdigest()
+        num_crashes = (int(digest[:8], 16) % 3) + 1
         process_input["num_crashes"] = num_crashes
 
         process = await self.call(
