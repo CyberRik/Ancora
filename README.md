@@ -8,10 +8,11 @@
   <img alt="Temporal" src="https://img.shields.io/badge/durability-Temporal-000000">
   <img alt="Ray" src="https://img.shields.io/badge/compute-Ray-028CF0">
   <img alt="FastAPI" src="https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white">
-  <img alt="Next.js" src="https://img.shields.io/badge/web-Next.js%2014-000000?logo=nextdotjs&logoColor=white">
+  <img alt="Next.js" src="https://img.shields.io/badge/web-Next.js%2015-000000?logo=nextdotjs&logoColor=white">
   <img alt="OpenTelemetry" src="https://img.shields.io/badge/tracing-OpenTelemetry-425CC7">
   <img alt="tests" src="https://img.shields.io/badge/tests-284%20passing-2ea44f">
   <img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-blue">
+  <a href="https://www.bestpractices.dev/projects/15907"><img alt="OpenSSF Best Practices" src="https://www.bestpractices.dev/projects/15907/badge"></a>
 </p>
 
 <p align="center">

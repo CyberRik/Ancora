@@ -1,6 +1,6 @@
 [project]
 name = "ancora-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Ancora command-line interface."
 requires-python = ">=3.11"
 readme = "README.md"

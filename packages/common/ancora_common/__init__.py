@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Fixed identifiers for the Phase 1 single-tenant defaults. Real multi-tenancy
 # (orgs/projects created via API + RBAC) lands in Phase 6.
