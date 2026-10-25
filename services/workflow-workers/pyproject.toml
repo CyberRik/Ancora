@@ -1,6 +1,6 @@
 [project]
 name = "ancora-worker"
-version = "0.1.0"
+version = "0.1.1"
 description = "Ancora workflow worker — executes deterministic workflows (Phase 1: activities inline)."
 requires-python = ">=3.11"
 readme = "README.md"

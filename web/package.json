@@ -1,6 +1,6 @@
 {
   "name": "ancora-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Ancora dashboard — Next.js 15 App Router.",
   "scripts": {

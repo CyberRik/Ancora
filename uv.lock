@@ -243,7 +243,7 @@ wheels = [
 
 [[package]]
 name = "ancora"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/sdk-python" }
 dependencies = [
     { name = "ancora-common" },
@@ -262,7 +262,7 @@ requires-dist = [
 
 [[package]]
 name = "ancora-activity-worker"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "services/activity-workers" }
 dependencies = [
     { name = "ancora" },
@@ -290,7 +290,7 @@ provides-extras = ["ray"]
 
 [[package]]
 name = "ancora-api"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "services/api-gateway" }
 dependencies = [
     { name = "alembic" },
@@ -323,7 +323,7 @@ requires-dist = [
 
 [[package]]
 name = "ancora-cli"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "ancora" },
@@ -342,7 +342,7 @@ requires-dist = [
 
 [[package]]
 name = "ancora-common"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "packages/common" }
 dependencies = [
     { name = "asyncpg" },
@@ -373,7 +373,7 @@ requires-dist = [
 
 [[package]]
 name = "ancora-event-consumer"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "services/event-consumer" }
 dependencies = [
     { name = "ancora-common" },
@@ -404,7 +404,7 @@ requires-dist = [
 
 [[package]]
 name = "ancora-monorepo"
-version = "0.1.0"
+version = "0.1.1"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -433,7 +433,7 @@ dev = [
 
 [[package]]
 name = "ancora-scheduler"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "services/scheduler" }
 dependencies = [
     { name = "ancora" },
@@ -460,7 +460,7 @@ requires-dist = [
 
 [[package]]
 name = "ancora-worker"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "services/workflow-workers" }
 dependencies = [
     { name = "ancora" },

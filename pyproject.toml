@@ -3,7 +3,7 @@
 # member packages/services together and holds shared tooling config.
 [project]
 name = "ancora-monorepo"
-version = "0.1.0"
+version = "0.1.1"
 description = "Ancora — a fault-tolerant runtime for durable AI workflows (workspace root)."
 requires-python = ">=3.11"
 readme = "README.md"

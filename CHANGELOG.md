@@ -6,13 +6,32 @@ All notable changes to Ancora are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-26
+
+Security and maintenance release. Upgrading is recommended for everyone: it
+patches vulnerable dependencies, including critical advisories in Next.js.
+The dashboard now needs React 19; nothing changes for API or SDK users.
+
 ### Added
 - CodeQL static analysis on every push, pull request and weekly.
 - Dependabot updates for Python, web, GitHub Actions and Docker dependencies.
+- OpenSSF Best Practices badge in the README.
 
 ### Changed
+- Dashboard upgraded from Next.js 14.2 to 15.5.28 and React 18 to 19.
 - Vulnerabilities are now reported privately through GitHub's Security tab
   instead of a placeholder email (see `SECURITY.md`).
+- Third-party GitHub Actions are pinned to commit SHAs, and CI runs with a
+  read-only token.
+- Test tooling: pytest 9.1 and pytest-asyncio 1.4.
+
+### Security
+- No vulnerabilities in Ancora's own code had public advisories.
+- Fixed log injection: request-supplied values (service, run ID, node ID) are
+  stripped of line breaks before logging.
+- Upgraded dependencies with known vulnerabilities: Next.js, postcss and
+  several transitive web packages; aiohttp, certifi, cryptography, multidict,
+  urllib3, Mako, virtualenv, filelock and opentelemetry on the Python side.
 
 ## [0.1.0] - 2026-08-27
 
@@ -38,5 +57,6 @@ and the chaos engine. Pre-1.0, so only `main` is supported (see `SECURITY.md`).
 ### Security
 - No known vulnerabilities were fixed in this release.
 
-[Unreleased]: https://github.com/CyberRik/Ancora/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/CyberRik/Ancora/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/CyberRik/Ancora/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/CyberRik/Ancora/releases/tag/v0.1.0
