@@ -30,6 +30,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from ancora_common.logging import log_safe
+
 logger = logging.getLogger("ancora.chaos")
 
 # Only these Compose services may be targeted. Killing Postgres or Temporal would
@@ -200,7 +202,9 @@ class ChaosService:
             )
             resp.raise_for_status()
 
-        logger.warning("chaos: killed %s (%s) with %s", service, target.name, signal)
+        logger.warning(
+            "chaos: killed %s (%s) with %s", log_safe(service), target.name, log_safe(signal)
+        )
         self.log.record(
             ChaosEvent(
                 action="kill",
@@ -228,7 +232,7 @@ class ChaosService:
             if resp.status_code != 304:
                 resp.raise_for_status()
 
-        logger.info("chaos: restarted %s (%s)", service, target.name)
+        logger.info("chaos: restarted %s (%s)", log_safe(service), target.name)
         self.log.record(
             ChaosEvent(action="restart", service=service, at=time.time(), detail=target.name)
         )

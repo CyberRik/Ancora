@@ -19,6 +19,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from ancora_common.logging import log_safe
 from ancora_scheduler import __version__
 from ancora_scheduler.config import ConfigStore
 from ancora_scheduler.engine import AdmissionEngine, AdmissionRequest
@@ -99,7 +100,13 @@ def build_router(engine: AdmissionEngine) -> APIRouter:
             )
         )
         if decision.outcome != "admit":
-            logger.info("%s %s/%s: %s", decision.outcome, req.run_id, req.node_id, decision.reason)
+            logger.info(
+                "%s %s/%s: %s",
+                decision.outcome,
+                log_safe(req.run_id),
+                log_safe(req.node_id),
+                log_safe(decision.reason),
+            )
         return AdmitResponse(
             outcome=decision.outcome,
             rule=decision.rule,
