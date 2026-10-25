@@ -7,6 +7,7 @@ Thanks for helping build Ancora. This guide gets you from clone to green PR.
 - **Trunk-based, small PRs.** Branch off `main`, keep PRs focused, rebase before merge.
 - **`main` is always releasable.** Guard half-built work behind feature flags.
 - **Every durability-touching change ships a replay test; every failure-path change ships a chaos assertion.** This is non-negotiable — it's the whole product.
+- **New functionality ships with tests.** Any new feature or bug fix adds or updates tests in the automated suite (`make test`), and CI must stay green.
 - **Design before code for anything large.** Land the relevant RFC (`docs/RFC-*`) first.
 
 ## Prerequisites
