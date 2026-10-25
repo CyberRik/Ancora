@@ -28,15 +28,15 @@ ancora-scheduler = { workspace = true }
 [dependency-groups]
 # Shared dev toolchain, installed into the workspace virtualenv via `uv sync`.
 dev = [
-    "ruff==0.9.6",
-    "mypy==1.15.0",
+    "ruff==0.17.2",
+    "mypy==2.4.0",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "httpx==0.28.1",
-    "pre-commit==4.1.0",
+    "pre-commit==4.7.0",
     # An in-process async SQL engine so the DatabaseNode's parameterization and
     # injection guarantees are tested against a real driver, not a mock.
-    "aiosqlite==0.20.0",
+    "aiosqlite==0.22.1",
 ]
 
 # ---------------------------------------------------------------------------
