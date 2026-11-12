@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # For the Ray-enabled image instead, replace the line above with:
 #   uv sync --package ancora-activity-worker --extra ray --no-dev
 
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.15-slim-bookworm AS runtime
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
